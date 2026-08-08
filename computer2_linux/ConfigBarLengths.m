@@ -86,18 +86,24 @@ end
 
 categoryFull = ceil((1:nFull) / BARS_PER_CATEGORY);   % 1-4=Short, 5-8=Mid, 9-12=Long
 
-% Representative VA per category (mean of its lengths). Computed from the
+% Representative VA per category (MEDIAN of its lengths). Computed from the
 % FULL table regardless of stimulusSet, so it is always the same reference
-% value no matter which set a session runs.
-catMeanVA = arrayfun(@(c) mean(anglesFull(categoryFull == c)), 1:numCategories);
+% value no matter which set a session runs. Median rather than mean so the
+% representative length tracks the centre of the category's ORDER, not its
+% arithmetic centre: an unevenly spaced table (or one edited to add a very
+% short/long bar at one end) pulls a mean off the middle of the category
+% while the median stays put. With an even BARS_PER_CATEGORY it is the
+% average of the two middle lengths, so it need not be a length that is
+% itself in the table.
+catMedianVA = arrayfun(@(c) median(anglesFull(categoryFull == c)), 1:numCategories);
 
 % --- Stimulus set (console "Bar set", orgParams.stimulusSet) -------------
 stimulusSet = OrgGet(orgParams, 'stimulusSet', 'full12');   % 'full12' | 'prototypes3' | 'extremes3'
 if strcmpi(stimulusSet, 'prototypes3')
-    % One prototype length per category (its mean VA, = catMeanVA above): a
-    % full pass is then 3 lengths x 4 positions = 12 trials/block instead of
-    % 12 x 4 = 48.
-    anglesSet    = catMeanVA;
+    % One prototype length per category (its MEDIAN VA, = catMedianVA
+    % above): a full pass is then 3 lengths x 4 positions = 12 trials/block
+    % instead of 12 x 4 = 48.
+    anglesSet    = catMedianVA;
     categorySet  = 1:numCategories;   % each length IS its own category
     % No 2-cat split exists for this set: one length per category means a
     % 2-category framing would only regroup prototypes, not test a
@@ -107,22 +113,23 @@ if strcmpi(stimulusSet, 'prototypes3')
     category2Set = ones(1, numCategories);
 elseif strcmpi(stimulusSet, 'extremes3')
     % Also three lengths, one per category, but pushed as far apart as the
-    % full set allows: the SHORTEST bar, the MIDPOINT of the Mid category
-    % (its mean VA, the same midpoint prototypes3 uses for that category),
-    % and the LONGEST bar, targets Short, Mid and Long respectively.
+    % full set allows: the SHORTEST bar, the MEDIAN of the Mid category (the
+    % same middle length prototypes3 uses for that category), and the
+    % LONGEST bar, targets Short, Mid and Long respectively.
     %
-    % Where prototypes3 asks "can the subject tell the three category means
-    % apart", this asks the easier question first: the two extremes are the
-    % most separable pair the stimulus table contains (4.00 vs 7.80 deg VA,
-    % against 4.45 vs 7.27 for the category means), with the middle length
-    % kept at the Mid category's own centre so the three stay evenly placed
-    % rather than the middle one drifting towards either extreme. Useful as
-    % the first rung above the training phases, and for a human session that
-    % has to establish the mapping quickly before the full set.
+    % Where prototypes3 asks "can the subject tell the three category
+    % medians apart", this asks the easier question first: the two extremes
+    % are the most separable pair the stimulus table contains (4.00 vs 7.80
+    % deg VA, against 4.40 vs 7.30 for the category medians), with the
+    % middle length kept at the Mid category's own centre so the three stay
+    % evenly placed rather than the middle one drifting towards either
+    % extreme. Useful as the first rung above the training phases, and for a
+    % human session that has to establish the mapping quickly before the
+    % full set.
     %
     % min/max rather than indices 1 and end so this keeps meaning "the
     % extremes" if the table above is ever edited or reordered.
-    anglesSet    = [min(anglesFull), catMeanVA(2), max(anglesFull)];
+    anglesSet    = [min(anglesFull), catMedianVA(2), max(anglesFull)];
     categorySet  = 1:numCategories;   % each length IS its own category
     category2Set = ones(1, numCategories);   % unused: forced to 3cat, as prototypes3
 else
@@ -173,7 +180,7 @@ sizesPx       = round(widthsMm / pixelPitch);
 bars.anglesFull         = anglesFull;          % the editable table (deg VA)
 bars.categoryFull       = categoryFull;        % category of each table entry
 bars.barsPerCategory    = BARS_PER_CATEGORY;
-bars.catMeanVA          = catMeanVA;           % mean VA per category, from the full table
+bars.catMedianVA        = catMedianVA;         % median VA per category, from the full table
 bars.numCategories      = numCategories;
 bars.stimulusSet        = stimulusSet;         % resolved set name
 bars.anglesSet          = anglesSet;           % after stimulusSet, BEFORE the subset
