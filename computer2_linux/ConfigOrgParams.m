@@ -95,7 +95,11 @@ classdef ConfigOrgParams
             % === STIMULUS SET ===
             % 'full12'      -- all 12 graded bar lengths (4 per category)
             % 'prototypes3' -- one midpoint length per category (its median VA)
+            % 'prototypes2' -- Short/Long prototypes (two-category framing)
             % 'extremes3'   -- shortest bar, Mid category's midpoint, longest
+            %                  bar (targets Short/Mid/Long): the same three
+            %                  categories with the widest separation the
+            %                  stimulus table allows. See CenterOutTask.m.
             %                  bar (targets Short/Mid/Long): the same three
             %                  categories with the widest separation the
             %                  stimulus table allows. See CenterOutTask.m.
