@@ -1,15 +1,17 @@
-function data = ReadUDP(uObject, block)
+function data = readUDP(uObject, block)
 % READUDP  Read one UDP packet and decode it.
+%   Paola Castillo 2026-07-31
+%
 %   Packets from the task computer come in two shapes:
-%     - Assignment statements, e.g. "reward=1;rewDuration=50;"; meant to
-%       be eval'd in the CALLER's workspace (CommunicationCategTaskACTX
+%     - Assignment statements, e.g. "reward=1;rewDuration=50;" -- meant to
+%       be eval'd in the CALLER's workspace (Communication_CategTask_ACTX
 %       does eval(tmpStr) on the returned string), NOT captured as a return
 %       value here. data = eval(pak) fails for these with "The expression
 %       to the left of the equals sign is not a valid target for an
 %       assignment," gets swallowed by this file's own catch, and returns
-%       data = [], silently dropping every reward packet. Confirmed
+%       data = [] -- silently dropping every reward packet. Confirmed
 %       2026-07-10.
-%     - Expressions, e.g. a struct(...) constructor for new-trial info;
+%     - Expressions, e.g. a struct(...) constructor for new-trial info --
 %       these DO produce a value and are safe to eval and capture directly.
 %
 %   Fix: detect assignment-statement packets by pattern (leading
@@ -41,7 +43,7 @@ try
 
 catch e
     % One warning line carrying both the error and the offending packet,
-    % instead of the inherited bare `pak` / display() pair; those echoed
+    % instead of the inherited bare `pak` / display() pair -- those echoed
     % the packet as an unsuppressed statement ("pak = ..."), so a relay that
     % starts receiving malformed datagrams floods the console of a running
     % session with untagged output. A warning is filterable and identifies
@@ -59,7 +61,7 @@ end
 
 % ===========================================================================
 function tf = isAssignmentStatement(s)
-% True if s starts with "identifier =" (not "==", "~=", "<=", ">=");
+% True if s starts with "identifier =" (not "==", "~=", "<=", ">=") --
 % i.e. it's a statement to eval() in the caller's workspace, not an
 % expression whose value can be captured here.
 tf = ~isempty(regexp(strtrim(s), '^[A-Za-z_]\w*\s*=[^=]', 'once'));

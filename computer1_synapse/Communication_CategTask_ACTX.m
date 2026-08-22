@@ -1,41 +1,42 @@
-function CommunicationCategTaskACTX()
-% COMMUNICATIONCATEGTASKACTX  Bridges the Synapse computer to the task's
+function Communication_CategTask_ACTX()
+% COMMUNICATION_CATEGTASK_ACTX  Bridges the Synapse computer to the task's
 %   computer over UDP.
-%   Cleaned up from the lab's original Computer-1 Synapse bridge script (German Mendoza Martinez): removed
+%   Paola Castillo 2026-07-31 -- cleaned up from the lab's original
+%   Computer-1 Synapse bridge script (German Mendoza Martinez): removed
 %   eye-tracking and NAS/mym calls, and removed bookkeeping variables that
 %   were written but never read anywhere (see below).
 %
 %   Computer-1-only (Windows): uses actxcontrol (ActiveX/COM) and the TDT
 %   SynapseAPI, neither of which exist on Linux/Computer 2. Launched by
-%   CategTaskCommunication.m's "Run" button, which publishes the GUI
+%   categTaskCommunication.m's "Run" button, which publishes the GUI
 %   handles as the global handles_glob before calling this function.
 %
 %   Reward messages arrive from the task computer as an evaluable string
-%   (e.g. "reward=1;rewDuration=250;") over the UDP link; rewDuration is
+%   (e.g. "reward=1;rewDuration=250;") over the UDP link -- rewDuration is
 %   set that way, not by direct assignment in this file.
 %
 %   JOYSTICK RELAY (2026-07-29, made on-demand 2026-07-30): also drives the
 %   analog-joystick-over-UDP relay (JoystickRelayToTask.m's
 %   InitJoystickRelay.m/StepJoystickRelay.m/CleanupJoystickRelay.m, port
 %   8831) from inside this SAME loop, reusing this function's own `syn`
-%   handle; so pressing "Run" here can start both reward/marker handling
+%   handle -- so pressing "Run" here can start both reward/marker handling
 %   and the joystick relay in one MATLAB process, no second MATLAB window
 %   needed. StepJoystickRelay.m is self-paced and never calls pause(), so
 %   interleaving it here does not slow down this loop's own reward/marker
 %   responsiveness.
 %
-%   The relay does NOT start automatically with "Run"; it starts OFF and
+%   The relay does NOT start automatically with "Run" -- it starts OFF and
 %   is turned on/off by an rz2RelayEnable=1/0 message from Computer 2 (see
 %   SetRZ2RelayEnable.m), sent whenever Computer 2's own Input source
 %   selection becomes/stops being 'rz2adc'. Previously this relay ran for
 %   this whole script's lifetime regardless of what Computer 2 was doing
-%   with it (even in plain 'joystick'/'mouse' sessions); wasted
+%   with it (even in plain 'joystick'/'mouse' sessions) -- wasted
 %   SynapseAPI/network traffic for a signal nothing was reading. relayEnabled
 %   here tracks whether the relay is CURRENTLY running (not just whether
 %   Init succeeded); a start failure is caught and warned, not a hard
 %   failure, so a joystick-relay problem never blocks reward delivery. Tied
 %   to this loop's own TD.GetSysMode() condition, so leaving Preview/
-%   Record stops the joystick relay right along with everything else,
+%   Record stops the joystick relay right along with everything else --
 %   no separate Ctrl+C needed for it.
 %
 %   TriggerDuration: 309 (1-1000)
@@ -60,7 +61,7 @@ try
     % previously cleared them when a new run starts. Result: after a prior
     % run left "Out of loop" (or "Loop aborted") on screen, starting a new
     % run would update text6 to "Loop is running" as soon as the loop began,
-    % while text7 kept showing the leftover text from the PREVIOUS run;
+    % while text7 kept showing the leftover text from the PREVIOUS run --
     % "Loop is running" and "Out of loop" visible at the same time. Confirmed
     % 2026-07-10.
     trySetGui(handles, 'text6', 'String', 'Starting...');
@@ -79,7 +80,7 @@ try
     reward      = 0;   % 1 while a reward message is pending, set via eval(tmpStr)
     rewDuration = 0;    % reward gizmo duration, set via eval(tmpStr)
     % 1 while Computer 2 wants the RZ2 relay running (Input source =
-    % 'rz2adc' selected there), set via eval(tmpStr); see
+    % 'rz2adc' selected there), set via eval(tmpStr) -- see
     % SetRZ2RelayEnable.m and the main loop's start/stop block below.
     rz2RelayEnable = 0;
     % Rows of [time, eventType, value], eventType: 1 = new stimulus index
@@ -115,7 +116,7 @@ try
 
     % --- Joystick relay (see header note above): starts OFF. Turned on/off
     % by Computer 2's rz2RelayEnable messages in the main loop below, not
-    % here; see that block for why (only run the relay while Computer 2
+    % here -- see that block for why (only run the relay while Computer 2
     % actually has Input source = 'rz2adc' selected).
     relayEnabled = false;
     relayState   = [];
@@ -129,7 +130,7 @@ try
             doOnce = 0;
         end
 
-        % Self-paced (see StepJoystickRelay.m); most calls here are a
+        % Self-paced (see StepJoystickRelay.m) -- most calls here are a
         % no-op; never calls pause(), so it cannot slow down the
         % reward/marker handling below.
         if relayEnabled
@@ -143,10 +144,10 @@ try
         end
 
         % --- Read a message from the task computer, if any -----------------
-        tmpStr = ReadUDP(uTask);
+        tmpStr = readUDP(uTask);
         if ~isempty(tmpStr)
             % flushUDP() is not a MATLAB/Instrument Control Toolbox function
-            % and was never defined anywhere in this codebase, it crashed
+            % and was never defined anywhere in this codebase -- it crashed
             % on the very first UDP message received (reward or trial-info
             % alike), aborting straight to the catch block before eval(tmpStr)
             % could ever run. flushinput() is the real function; it's already
@@ -166,13 +167,13 @@ try
 
         % --- Start/stop the RZ2 joystick relay to match Computer 2's
         % current Input source selection (rz2RelayEnable, set above via
-        % eval(tmpStr); see SetRZ2RelayEnable.m). relayEnabled tracks
+        % eval(tmpStr) -- see SetRZ2RelayEnable.m). relayEnabled tracks
         % whether the relay is CURRENTLY running; a start failure is caught
         % and warned, not a hard failure, so it never blocks reward
         % delivery below.
         %
         % MATLAB's Code Analyzer flags both branches below as unreachable
-        % (%#ok<UNRCH> suppresses that); it cannot see that eval(tmpStr)
+        % (%#ok<UNRCH> suppresses that) -- it cannot see that eval(tmpStr)
         % above is what actually changes rz2RelayEnable at runtime, so from
         % its static, eval()-blind view rz2RelayEnable looks like a
         % constant 0 forever. Same false positive that would apply to the
@@ -216,7 +217,7 @@ try
         end
     end
 
-    % Loop exited because Synapse left Preview/Record; stop the joystick
+    % Loop exited because Synapse left Preview/Record -- stop the joystick
     % relay right along with everything else (see header note above).
     if relayEnabled, try, CleanupJoystickRelay(relayState); catch, end, end
 
@@ -230,12 +231,12 @@ catch me
     % Print to the command window before touching the GUI at all. Previously
     % the set(handles.text6, ...) calls ran first and, if the GUI figure had
     % already been closed/deleted (handles.text6 invalid), that set() call
-    % itself errored, which aborted the catch block before ever reaching
+    % itself errored -- which aborted the catch block before ever reaching
     % disp(me.message), silently swallowing the real error. Confirmed
     % 2026-07-10: "Error using matlab.ui.control.UIControl/set: Invalid or
     % deleted object" at this exact line masked whatever actually failed in
     % the try block above.
-    disp('--- CommunicationCategTaskACTX: error caught ---')
+    disp('--- Communication_CategTask_ACTX: error caught ---')
     disp(me.message)
     if ~isempty(me.stack)
         disp(['line ' num2str(me.stack(1).line)])

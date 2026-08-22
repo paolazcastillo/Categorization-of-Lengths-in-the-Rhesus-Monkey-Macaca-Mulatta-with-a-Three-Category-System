@@ -1,5 +1,6 @@
 function [wave, fs] = AlertWaveform(outcome)
 % ALERTWAVEFORM  The end-of-session alert tone sequence, as raw samples.
+%   Paola Castillo 2026-08-06
 %
 %   Split out of AlertTaskDone.m so the tones live in ONE place: the engines
 %   play them through AlertTaskDone (system default output, via sound()),
@@ -9,13 +10,13 @@ function [wave, fs] = AlertWaveform(outcome)
 %   verifying a sound the rig never actually makes.
 %
 %   INPUT
-%     outcome : 'done'    : session completed its quota (rising 3-tone)
-%               'stopped' : ended by the operator/Abort (falling 2-tone)
-%               'error'   : the engine hit its crash handler (low, repeated)
+%     outcome : 'done'    -- session completed its quota (rising 3-tone)
+%               'stopped' -- ended by the operator/Abort (falling 2-tone)
+%               'error'   -- the engine hit its crash handler (low, repeated)
 %
 %   OUTPUT
 %     wave : 1xN row of samples in [-1 1], amplitude 0.35
-%     fs   : 8192 Hz, MATLAB's own default sound() rate. Kept low on
+%     fs   : 8192 Hz -- MATLAB's own default sound() rate. Kept low on
 %            purpose: it is the rate every device is most likely to accept.
 %            Some WASAPI/USB outputs still refuse it, which is exactly what
 %            testAlarmSpeakers.m checks per device.

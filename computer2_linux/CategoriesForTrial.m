@@ -1,12 +1,13 @@
 function [catRows, trueCat] = CategoriesForTrial(nc, lenIdx, trainingPhase, ...
         lengthCategory, lengthCat2, colorRows2, colorRows3)
 % CATEGORIESFORTRIAL  Which categories one trial offers, and which is correct.
+%   Paola Castillo 2026-07-31
 %
 %   Answers "for a bar of length index lenIdx shown with nc targets, which
 %   categories go on screen (catRows) and which of them is the correct one
 %   (trueCat)?". The single place all four of CenterOutTask.m's call sites go
-%   through (initial sequence build, correction retry, and the two requeues
-% ) so a mode can't be wired into some of them and silently not the others.
+%   through -- initial sequence build, correction retry, and the two requeues
+%   -- so a mode can't be wired into some of them and silently not the others.
 %
 %   Its output feeds straight into DrawTrialLayout.m / FixedTargetLayout.m
 %   (which turn categories into per-slot directions and colours); this
@@ -14,7 +15,7 @@ function [catRows, trueCat] = CategoriesForTrial(nc, lenIdx, trainingPhase, ...
 %
 %   Both outputs are deterministic in (nc, lenIdx) with ONE exception: the
 %   training phase-2 foil is redrawn at random on every call. That is
-%   deliberate; it is what makes a correction retry offer a different wrong
+%   deliberate -- it is what makes a correction retry offer a different wrong
 %   colour than the attempt before it, the same reason DrawTrialLayout.m
 %   reshuffles positions on a retry.
 %
@@ -33,15 +34,18 @@ function [catRows, trueCat] = CategoriesForTrial(nc, lenIdx, trainingPhase, ...
 %     trueCat : the correct category (1=Short, 2=Mid, 3=Long)
 
 if trainingPhase > 0
-    % Colour MATCHING, not categorization: the correct target always wears
-    % the bar's own 3-category colour, whatever nc is; lengthCat2's
-    % coarser 2-bucket split has no role in these phases.
-    trueCat = colorRows3(lengthCategory(lenIdx));
+    % Colour MATCHING restricted to the 2-colour palette (orange/blue):
+    % pre-training always uses the Short/Long buckets (lengthCat2 -> colorRows2
+    % = [1 3]), NEVER Mid/green, so the correct target is always orange or blue
+    % and the phase-2 foil is always the opposite of those two. (Changed from
+    % the 3-category split, which could show green as the correct colour or as
+    % a foil; now pre-training is always blue/orange.)
+    trueCat = colorRows2(lengthCat2(lenIdx));
     if nc == 1
         catRows = trueCat;                       % phase 1: nothing to choose between
     else
-        otherCats = colorRows3(colorRows3 ~= trueCat);
-        catRows = [trueCat, otherCats(randi(numel(otherCats)))];   % phase 2: + one foil colour
+        otherCats = colorRows2(colorRows2 ~= trueCat);
+        catRows = [trueCat, otherCats(randi(numel(otherCats)))];   % phase 2: + the opposite colour
     end
 elseif nc == 2
     catRows = colorRows2;  trueCat = colorRows2(lengthCat2(lenIdx));

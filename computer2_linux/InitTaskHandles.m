@@ -4,8 +4,9 @@ function handles = InitTaskHandles(taskName)
 % textSessionTime) both engines write live status into, plus the optional
 % textBreakdown box. Used when the caller didn't pass orgParams.handles
 % (e.g. calling CenterOutTask or CenterInTask directly, without going
-% through CenterConsole.m); the same fields OffrigPlay.m otherwise has to
+% through CenterConsole.m) -- the same fields OffrigPlay.m otherwise has to
 % mock by hand.
+% Paola Castillo 2026-07-31
 %
 %   INPUT  taskName : used only for the status figure's window title
 %          (e.g. 'CenterOutTask', 'CenterInTask').

@@ -2,9 +2,10 @@ function [slotDir, slotCol, correctSlot] = DrawTrialLayout(nc, trueCat, catRows,
 % DRAWTRIALLAYOUT  Random colour/position assignment for one trial's targets,
 % given a fixed true category (trueCat) and correct direction (correctDir).
 % Shared by the upfront sequence build and by the correction-trial reshuffle
-% so a repeated stimulus doesn't keep the same colour in the same spot;
+% so a repeated stimulus doesn't keep the same colour in the same spot --
 % otherwise the subject can solve the retry by spatial elimination ("not
 % that one") instead of actually reading the bar again.
+% Paola Castillo 2026-07-31
 %
 %   See also FixedTargetLayout.m, its deterministic no-shuffle counterpart
 %   (every category always at the same direction), used instead of this
@@ -24,7 +25,7 @@ function [slotDir, slotCol, correctSlot] = DrawTrialLayout(nc, trueCat, catRows,
 % Guard: trueCat must be in catRows. If not, distractCols would have nc
 % elements instead of nc-1, silently producing a nc+1-element slotCol that
 % gets truncated by randperm(nc), potentially losing trueCat from the array
-% and returning correctSlot = [], a delayed crash with a confusing traceback.
+% and returning correctSlot = [] -- a delayed crash with a confusing traceback.
 assert(ismember(trueCat, catRows), ...
     'DrawTrialLayout: trueCat (%d) not found in catRows [%s].', ...
     trueCat, num2str(catRows));

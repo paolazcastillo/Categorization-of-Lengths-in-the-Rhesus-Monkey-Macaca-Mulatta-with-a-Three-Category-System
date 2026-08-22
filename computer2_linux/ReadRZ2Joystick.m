@@ -3,14 +3,15 @@ function [vx, vy] = ReadRZ2Joystick(rz2)
 % the last call, cache the newest [vx, vy] on rz2.port.UserData for this
 % call's return value (used for cursor rendering), and stash the FULL
 % drained batch (not just the newest) on rz2.port.UserData.batch for
-% TakeRZ2JoystickSamples.m to log to the trajectory; see that file for
+% TakeRZ2JoystickSamples.m to log to the trajectory -- see that file for
 % why logging needs the whole batch instead of the single sample this
 % function returns.
+% Paola Castillo 2026-07-31
 %
 % WIRE FORMAT. Each datagram is one relay cycle and carries N_READ sample
 % lines, "N:<absIdx>,X:<x>,Y:<y>\n" (see InitJoystickRelay.m's WIRE FORMAT
-% note). Datagrams from a relay that has NOT been updated (one sample per
-% datagram, no index, "X:<x>,Y:<y>\n") are still accepted, so the two
+% note). Datagrams from a relay that has NOT been updated -- one sample per
+% datagram, no index, "X:<x>,Y:<y>\n" -- are still accepted, so the two
 % machines can be upgraded one at a time; those samples fall back to the old
 % estimated timestamps and are counted in UserData.nLegacyFmt.
 %
@@ -18,21 +19,21 @@ function [vx, vy] = ReadRZ2Joystick(rz2)
 % any sample is (idx - idxAnchor)/sampleRateHz after the local clock reading
 % taken when the anchor sample arrived. That is what makes a backlogged
 % sample carry the time it was CAPTURED rather than the time it was finally
-% read. Spreading each drained batch evenly between drains would be fiction
-% as soon as a queue exists, and these timestamps are what the trajectory
-% export and TrialKinematics.m's velocities are built from, so the
-% distinction matters. Two honest caveats: the anchor absorbs whatever one-way
+% read -- the previous version spread each drained batch evenly between
+% drains, which is fiction as soon as a queue exists, and those timestamps
+% are what the trajectory export and TrialKinematics.m's velocities are
+% built from. Two honest caveats: the anchor absorbs whatever one-way
 % latency existed at the first drain as a CONSTANT offset (harmless for
 % velocities and for within-trial timing, since it cancels in differences),
 % and the RZ2's clock and this machine's clock drift apart by their crystals'
-% ppm over a session; neither is corrected here.
+% ppm over a session -- neither is corrected here.
 %
 % DRAIN CAP. The loop stops after rz2.maxSamplesPerDrain samples instead of
 % draining whatever has piled up. An unbounded drain inside the Psychtoolbox
 % frame loop is what let a backlog turn into a runaway: the longer the queue
 % got, the longer the frame that had to swallow it, which grew the queue
 % further. With a cap, a bad frame costs a bounded amount and the surplus is
-% simply read on the following frames. What is left over is NOT hidden;
+% simply read on the following frames. What is left over is NOT hidden --
 % UserData.maxBacklog/nCapped record it and CleanupRZ2Joystick.m prints them,
 % because a backlog that never clears is exactly the failure this link had
 % and it was previously invisible from inside MATLAB.
@@ -46,7 +47,7 @@ t2 = GetSecs();
 % The cap is checked BEFORE starting a datagram and a datagram that has been
 % read is always consumed whole, so the real ceiling is maxSamples plus one
 % relay cycle. Capping mid-datagram instead would mean discarding samples
-% this process has already taken off the socket and can never get back,
+% this process has already taken off the socket and can never get back --
 % strictly worse than leaving them queued, which is the whole point.
 rows   = zeros(maxSamples + 32, 3);   % [idx, vx, vy] while filling; +slack for the last datagram
 nRows  = 0;
@@ -79,7 +80,7 @@ while true
     % Read flat and reshape HERE rather than asking sscanf for [3 Inf]: given
     % a size, sscanf ZERO-PADS a final record that the data does not fill.
     % A datagram torn mid-line (a partial read, a sender killed mid-write)
-    % would therefore not be rejected but silently completed; "N:101,X:0.6"
+    % would therefore not be rejected but silently completed -- "N:101,X:0.6"
     % comes back as [101; 0.6; 0], a fabricated sample that puts the cursor
     % at Y=0. Worse, a tear one field earlier returns a 2-row matrix, whose
     % transpose does not fit the 3-column buffer below and throws INSIDE the
@@ -118,8 +119,8 @@ if nRows > 0
 
     % Count index gaps: dropped datagrams AND the relay's periodic
     % recalibration jumps both show up here. Both are REAL discontinuities
-    % in the sample stream (the point of the counter is that neither is
-    % silent any more) so they are reported together rather than
+    % in the sample stream -- the point of the counter is that neither is
+    % silent any more -- so they are reported together rather than
     % pretending they can be told apart from this side. Gaps BETWEEN
     % datagrams of this same drain are counted too, not just the seam
     % against the previous drain: a single lost datagram in the middle of a
@@ -153,8 +154,8 @@ if nRows > 0
     ud.nSamples = ud.nSamples + nRows;
 end
 
-% Whatever is still queued after this drain, the health signal for the
-% link, and otherwise invisible from inside MATLAB.
+% Whatever is still queued after this drain -- the health signal that used
+% to be invisible.
 if rz2.useNewUDP
     backlog = u.NumDatagramsAvailable;
 else
@@ -167,7 +168,7 @@ if capped
     ud.nCapped   = ud.nCapped + 1;
     ud.capConsec = ud.capConsec + 1;
     % Warn on SUSTAINED capping, not on the first frame that hits the cap.
-    % One capped frame (or a run of them) is the normal, self-clearing
+    % One capped frame -- or a run of them -- is the normal, self-clearing
     % way a backlog gets worked off after any stall the task loop takes
     % (a trial-transition write, an operator pause, session start before
     % FlushRZ2Joystick.m runs). Warning on the first hit cried wolf every

@@ -1,6 +1,7 @@
 function [kbDevice, useKbQueue] = SetupKeyboardDevice(useMouse, keysToWatch)
 % SETUPKEYBOARDDEVICE  Resolve which physical keyboard device index to use
 % for KbQueueCheck/SafeKbCheck, and start a KbQueue on it if possible.
+% Paola Castillo 2026-07-31
 %
 %   Do NOT hardcode a device index: on Linux/X11 (Computer 2 rig) index 1
 %   is the "master keyboard" (X11's virtual core keyboard), which
@@ -12,7 +13,7 @@ function [kbDevice, useKbQueue] = SetupKeyboardDevice(useMouse, keysToWatch)
 %   GetKeyboardIndices alone is not enough either: on this rig it returns
 %   5 keyboard-class devices (Virtual core XTEST keyboard, 2x Power
 %   Button, Dell WMI hotkeys, and the real Dell Wired Multimedia
-%   Keyboard); the first index is the XTEST virtual device, not the
+%   Keyboard) -- the first index is the XTEST virtual device, not the
 %   physical keyboard. Power Button/hotkeys devices also don't report
 %   standard keys (space/ESC/r), so picking one of those would fail
 %   silently (no error, but the task would never see a keypress). Filter

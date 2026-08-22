@@ -1,5 +1,6 @@
 function inside = CheckInCircle(x, y, cx, cy, rectLeft, rectRight)
 % CHECKINCIRCLE  True if point (x,y) is inside the centre hold window.
+%   Paola Castillo 2026-07-31
 %
 %   Call site in CenterOutTask.m and CenterInTask.m:
 %     CheckInCircle(x, y, xCenter, yCenter, centerCircle(1), centerCircle(3))

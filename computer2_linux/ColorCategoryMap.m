@@ -1,5 +1,6 @@
 classdef ColorCategoryMap
     % COLORCATEGORYMAP  Centralized colour <-> category mapping and naming.
+    %   Paola Castillo 2026-07-31
     %
     %   Single source of truth for every colour-category association and for
     %   the category names written to logs and console reports, so the cue
@@ -24,14 +25,17 @@ classdef ColorCategoryMap
     %   the category index; that lets report code fetch a label without
     %   constructing an object just to read a constant list.
     %
-    %   The mapping is one-way by design: there is no RGB -> category
-    %   lookup. The category is never lost in the first place, so nothing
-    %   needs to decode the colour painted on a target to recover what the
-    %   subject chose; the per-trial layout stores trialColorRows, which
-    %   IS the category index, and the RGB is derived from it. Keying on an
-    %   exact integer RGB triplet would also be fragile: any blended colour
-    %   (e.g. the bar under barColorIntensity, which interpolates toward
-    %   white) would miss the table.
+    %   NOTE ON THE REMOVED REVERSE LOOKUP. Earlier versions carried an
+    %   RGB -> category map (colorToCategory), inherited from v2_2's
+    %   encodeChosenColor, which had to decode the colour painted on a target
+    %   to recover what the subject chose. It is gone because the category is
+    %   never lost in the first place: the per-trial layout stores
+    %   trialColorRows, which IS the category index, and the RGB is derived
+    %   from it. A reverse lookup would reconstruct information that was
+    %   always available, and it was fragile besides -- it keyed on the exact
+    %   integer RGB triplet, so any blended colour (e.g. the bar under
+    %   barColorIntensity, which interpolates toward white) missed the table
+    %   and returned -1.
     %
     %   Note: Categories are always 1-indexed (1=Short, 2=Mid, 3=Long).
     %         RGB values are always 0-255 (not normalized to [0,1]).

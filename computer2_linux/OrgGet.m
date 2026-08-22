@@ -2,9 +2,10 @@ function val = OrgGet(orgParams, field, default)
 % ORGGET  orgParams.(field) if present and usable, otherwise `default`.
 % Centralises the GUI-override pattern used for timing/geometry constants
 % throughout CenterOutTask.m and CenterInTask.m.
+% Paola Castillo 2026-07-31
 %
-% A field counts as usable when it is present, non-empty, and (for numeric
-% values) free of NaN. The NaN check exists because CenterConsole.m fills
+% A field counts as usable when it is present, non-empty, and -- for numeric
+% values -- free of NaN. The NaN check exists because CenterConsole.m fills
 % every numeric field with str2double(get(edit, 'String')), and str2double
 % returns NaN rather than erroring whenever the text is not a plain number:
 % an emptied box, a stray letter, or a comma decimal separator ('0,5'

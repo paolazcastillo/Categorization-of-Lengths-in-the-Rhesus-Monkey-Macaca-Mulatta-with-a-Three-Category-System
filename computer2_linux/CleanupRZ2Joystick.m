@@ -1,18 +1,19 @@
 function CleanupRZ2Joystick(rz2)
 % CLEANUPRZ2JOYSTICK  Closes the UDP listener socket SetupRZ2Joystick.m
-% opened (rz2.port), the Computer-2 counterpart to Computer 1's
+% opened (rz2.port) -- the Computer-2 counterpart to Computer 1's
 % CleanupJoystickRelay.m, same reasoning: a udpport/udp object left open
 % keeps its LocalPort bound, so the next run's SetupRZ2Joystick.m fails
 % with "Address already in use" until either this MATLAB session ends or
-% something closes it. Both CenterOutTask.m and CenterInTask.m must
-% therefore call this from their normal teardown AND from their crash/catch
-% path: any run that ends (normal exit, operator abort, or an uncaught
-% error) while Input source = 'rz2adc' without releasing rz2.port leaves
-% port 8831 bound for the rest of that MATLAB session, and the next rz2adc
-% run in the same session hits exactly that error.
+% something closes it. This used to never get called anywhere -- neither
+% CenterOutTask.m's/CenterInTask.m's normal teardown nor their crash/catch
+% path released rz2.port -- so any run that ended (normal exit, operator
+% abort, or an uncaught error) while Input source = 'rz2adc' left port 8831
+% bound for the rest of that MATLAB session, and the NEXT rz2adc run in the
+% same session hit exactly that error. Confirmed 2026-07-30.
+% Paola Castillo 2026-07-31
 %
 % Safe to call with rz2=[] (Input source wasn't 'rz2adc', so nothing was
-% ever opened), no-ops instead of erroring, same convention
+% ever opened) -- no-ops instead of erroring, same convention
 % CleanupJoystickRelay.m/SetRZ2RelayEnable.m already use for their own
 % "was this even set up" guard.
 if isempty(rz2) || ~isfield(rz2, 'port') || isempty(rz2.port)
@@ -20,10 +21,10 @@ if isempty(rz2) || ~isfield(rz2, 'port') || isempty(rz2.port)
 end
 
 % Link summary before the socket goes away. These counters are the answer to
-% "was the joystick link actually healthy this session?", which nothing else
-% can answer from inside MATLAB: a relay arriving faster than the frame loop
-% can read it looks identical, from here, to one that is keeping up, the
-% cursor just quietly renders older and older samples. Printed rather
+% "was the joystick link actually healthy this session?", which used to be
+% unanswerable from inside MATLAB: a relay that arrived faster than the frame
+% loop could read it looked identical, from here, to one that was keeping up
+% -- the cursor just quietly rendered older and older samples. Printed rather
 % than returned so it lands in the session log next to everything else, and
 % wrapped in its own try so a reporting problem can never keep the port from
 % being released below.

@@ -1,8 +1,8 @@
-function SaveMovementTrajectory(trajBuf, trajN, outDir, runTag, sessionDate, movementEpoch, saveAsMat, saveCsv)
+function SaveMovementTrajectory(trajBuf, trajN, outDir, runTag, sessionDate, movementEpochs, saveAsMat, saveCsv)
     % SAVEMOVEMENTTRAJECTORY  Movement-only trajectory export.
     %
     %   Same columns as trajectory_*.{mat,csv}, but rows restricted to
-    %   Epoch == movementEpoch, exactly the rows TrialKinematics.m
+    %   Epoch in movementEpochs, exactly the rows TrialKinematics.m
     %   differentiates for peakVel/meanVel/peakAccel, plus ONE extra
     %   trailing column, MoveTime_ms. Writes
     %   trajectory_movement_<runTag>.{mat,csv}.
@@ -18,7 +18,7 @@ function SaveMovementTrajectory(trajBuf, trajN, outDir, runTag, sessionDate, mov
     %   with the SAME first five arguments, so the task calls whichever it
     %   wants, in whichever order:
     %     SaveTrajectory(trajBuf, trajN, outDir, d, sessionDate, true, true);
-    %     SaveMovementTrajectory(trajBuf, trajN, outDir, d, sessionDate, EP.MOVEMENT.Value);
+    %     SaveMovementTrajectory(trajBuf, trajN, outDir, d, sessionDate, kinematicsEpochs);
     %   The full multi-epoch export stays the source of truth for trajectory
     %   maps that need the pre-movement epochs; this is a convenience cut for
     %   kinematics-only analysis, and re-derivable from the full file at any
@@ -30,22 +30,28 @@ function SaveMovementTrajectory(trajBuf, trajN, outDir, runTag, sessionDate, mov
     %   the other having run first.
     %
     %   INPUT
-    %     trajBuf       : raw trajectory buffer, N x 8 (CenterOutTask.m) or
-    %                     N x 6 (CenterInTask.m); see SaveTrajectory.m for
-    %                     the column meanings. Epoch sits at the same position
-    %                     in both layouts once TrialNum is stripped (column 4),
-    %                     so the row filter below is layout-independent; only
-    %                     the CSV header differs.
-    %     trajN         : number of valid rows in trajBuf
-    %     outDir        : output directory (created if missing)
-    %     runTag        : run identifier (used in output filenames)
-    %     sessionDate   : session date string for CSV rows
-    %     movementEpoch : numeric epoch code to keep (e.g. EP.MOVEMENT.Value).
-    %                     Empty or missing = nothing to filter on, returns
-    %                     without writing (CenterInTask.m has no MOVEMENT
-    %                     epoch and simply never calls this).
-    %     saveAsMat     : bool, save .mat file (default: true)
-    %     saveCsv       : bool, save .csv file (default: true)
+    %     trajBuf        : raw trajectory buffer, N x 8 (CenterOutTask.m) or
+    %                      N x 6 (CenterInTask.m); see SaveTrajectory.m for
+    %                      the column meanings. Epoch sits at the same position
+    %                      in both layouts once TrialNum is stripped (column 4),
+    %                      so the row filter below is layout-independent; only
+    %                      the CSV header differs.
+    %     trajN          : number of valid rows in trajBuf
+    %     outDir         : output directory (created if missing)
+    %     runTag         : run identifier (used in output filenames)
+    %     sessionDate    : session date string for CSV rows
+    %     movementEpochs : numeric epoch code, OR VECTOR of codes, to keep
+    %                      (e.g. EP.MOVEMENT.Value alone, or
+    %                      [EP.DECISION_TIME.Value, EP.MOVEMENT.Value] --
+    %                      CenterOutTask.m's kinematicsEpochs -- to match
+    %                      whatever window TrialKinematics.m differentiated
+    %                      over for this session; a row is kept when its
+    %                      Epoch matches ANY listed code). Empty or missing =
+    %                      nothing to filter on, returns without writing
+    %                      (CenterInTask.m has no MOVEMENT epoch and simply
+    %                      never calls this).
+    %     saveAsMat      : bool, save .mat file (default: true)
+    %     saveCsv        : bool, save .csv file (default: true)
     %
     %   OUTPUT
     %     none (side effects: files written to disk)
@@ -55,12 +61,12 @@ function SaveMovementTrajectory(trajBuf, trajN, outDir, runTag, sessionDate, mov
     %       this is safe to call from the crash-recovery catch block where it
     %       must not mask the original error.
     %     - Writing zero matching rows is not an error: a session that ended
-    %       before any MOVEMENT epoch legitimately has none, and an empty file
-    %       records that fact rather than hiding it.
+    %       before any matching epoch legitimately has none, and an empty
+    %       file records that fact rather than hiding it.
 
     % Defaults
     if nargin < 6
-        movementEpoch = [];
+        movementEpochs = [];
     end
     if nargin < 7 || isempty(saveAsMat)
         saveAsMat = true;
@@ -70,7 +76,7 @@ function SaveMovementTrajectory(trajBuf, trajN, outDir, runTag, sessionDate, mov
     end
 
     % Guards: nothing to save, or nothing to filter on
-    if isempty(trajBuf) || trajN <= 0 || isempty(movementEpoch)
+    if isempty(trajBuf) || trajN <= 0 || isempty(movementEpochs)
         return;
     end
 
@@ -84,10 +90,12 @@ function SaveMovementTrajectory(trajBuf, trajN, outDir, runTag, sessionDate, mov
         end
     end
 
-    % Extract trajectory (remove TrialNum column 1) and keep MOVEMENT rows
+    % Extract trajectory (remove TrialNum column 1) and keep rows matching
+    % ANY of movementEpochs (ismember; a scalar movementEpochs behaves
+    % exactly as the old single-epoch == comparison did).
     try
         trajectory = trajBuf(1:trajN, 2:end);
-        moveRows = trajectory(:, 4) == movementEpoch;
+        moveRows = ismember(trajectory(:, 4), movementEpochs);
         trajectoryMovement = trajectory(moveRows, :);
         nMoveRows = size(trajectoryMovement, 1);
     catch ME
@@ -100,7 +108,8 @@ function SaveMovementTrajectory(trajBuf, trajN, outDir, runTag, sessionDate, mov
     % since the session's first trial) so both files remain directly
     % comparable; MoveTime_ms adds the same measurement re-zeroed at each
     % trial's own movement onset, which is the clock kinematics are read in
-    % (t=0 is when the cursor left the centre). Trailing position keeps the
+    % (t=0 is the first sample of this trial's kept epoch(s), i.e. whichever
+    % of them the trial actually reached). Trailing position keeps the
     % existing column indices valid for anything already reading these files
     % (plotMovementTrajectories.m, TrialKinematics.m column layout).
     try

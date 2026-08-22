@@ -1,20 +1,21 @@
 classdef CenterConsole < handle
     % CENTERCONSOLE  Unified experiment control console (session + task).
+    %   Paola Castillo 2026-07-31
     %
-    %   Console state lives in properties rather than setappdata/getappdata,
-    %   and callbacks are bound to object methods rather than nested functions
-    %   sharing state through guidata. Deliberately still a classic
-    %   figure()/uicontrol() GUI, NOT App Designer/uifigure: both task engines
-    %   talk to their GUI handles with classic get/set('String', ...) calls,
-    %   which uifigure components (uilabel/uieditfield) do not support the
-    %   same way.
+    %   OOP replacement for the original function-based console: properties
+    %   instead of scattered setappdata/getappdata, callbacks bound to object
+    %   methods instead of nested callback functions sharing state through
+    %   guidata. Deliberately still a classic figure()/uicontrol() GUI, NOT
+    %   App Designer/uifigure: both task engines talk to their GUI handles
+    %   with classic get/set('String', ...) calls, which uifigure components
+    %   (uilabel/uieditfield) do not support the same way.
     %
-    %   What this console covers:
+    %   Changes from the original console:
     %     - NO eye-tracking controls/calibration anywhere in this GUI.
     %     - Reward, all timing delays, and rig geometry (centre window,
     %       centre/target/cue positions) are editable here and passed through
-    %       to the selected engine via orgParams, so none of them is a
-    %       hardcoded constant inside an engine.
+    %       to the selected engine via orgParams (previously hardcoded
+    %       constants).
     %     - Every run's exact parameters are snapshotted to disk before the
     %       task starts, tagged with the same runTag used for that run's data
     %       files, so any output file can be traced back to the settings
@@ -30,8 +31,8 @@ classdef CenterConsole < handle
     %     params = console.getSessionParams();   % current GUI values (resolved strings)
     %
     %   SINGLE WINDOW: the console is a singleton. Calling CenterConsole()
-    %   again (which is what an operator naturally does to set up the next
-    %   session) raises the console that is already open and returns that
+    %   again -- which is what an operator naturally does to set up the next
+    %   session -- raises the console that is already open and returns that
     %   same object instead of stacking up a second, third, ... console
     %   window (each with its own copy of the parameters, only one of which
     %   is the one the operator actually edited). One run ending (normally
@@ -41,7 +42,7 @@ classdef CenterConsole < handle
     %
     %   Task type (ui.popTaskType, Session panel): 'Center-Out (categorization)'
     %   dispatches to CenterOutTask (bar-length categorization, 2/3 targets);
-    %   'Center-In (hold)' dispatches to CenterInTask (no bar/cue/targets;
+    %   'Center-In (hold)' dispatches to CenterInTask (no bar/cue/targets --
     %   just enter and hold the centre circle for reward, a simpler
     %   pre-categorization training task). Most of the "Task parameters" panel
     %   only applies to Center-Out (Session mode, Bar set, Show cue, Stop-by
@@ -52,7 +53,7 @@ classdef CenterConsole < handle
     %
     %   Abort works through the same getappdata(fig,'stop') polling both
     %   engines already do every frame: dlgTrainingMain (see runTask) is a
-    %   separate, hidden proxy figure, not this console window itself,
+    %   separate, hidden proxy figure -- not this console window itself,
     %   since both engines call close() on it (on normal completion and from
     %   their crash handler), which must not make the whole console vanish.
     %
@@ -77,7 +78,7 @@ classdef CenterConsole < handle
     end
 
     properties (Constant, Access = private)
-        % Figure Tag the singleton check in the constructor looks for; the
+        % Figure Tag the singleton check in the constructor looks for -- the
         % console window is identified by this, never by its handle number,
         % which does not survive a "clear" of the calling workspace.
         figTag = 'CenterTaskConsole'
@@ -104,7 +105,7 @@ classdef CenterConsole < handle
                 end
                 % Orphaned window: its object was cleared (e.g. "clear
                 % classes" or a closed workspace), so nothing can drive it
-                % any more; drop it and build a working console instead.
+                % any more -- drop it and build a working console instead.
                 delete(existing);
             end
 
@@ -122,7 +123,7 @@ classdef CenterConsole < handle
 
             % Force pixel units for every uipanel/uicontrol/uitable created
             % under this figure from here on, regardless of this MATLAB
-            % install's own default, root cause of a real bug seen on one
+            % install's own default -- root cause of a real bug seen on one
             % lab machine, where uipanel's default Units resolved to
             % 'normalized' (uicontrol's stayed 'pixels'), so a panel's
             % literal pixel Position was interpreted as fractions of the
@@ -135,7 +136,7 @@ classdef CenterConsole < handle
             self.buildRunPanel();
 
             % Trials budget otherwise only gets written once an engine
-            % actually runs (see runTask/taskTypeSelect_Callback), compute
+            % actually runs (see runTask/taskTypeSelect_Callback) -- compute
             % the initial preview now so it's never left showing the
             % hardcoded '0' from buildRunPanel. Going through the Bar set
             % callback also applies the Session mode lock, so a default of
@@ -171,14 +172,14 @@ classdef CenterConsole < handle
             % Called once a run has ended, whatever ended it (finished,
             % Abort, or a crash). The console STAYS OPEN and keeps every
             % task parameter as configured; what is discarded is the
-            % session identity itself; the registration that run's runTag,
+            % session identity itself -- the registration that run's runTag,
             % params snapshot and output files were written under.
             %
             % Consequence, and the point of doing it: Start is disabled
             % until "Register session" is pressed again, so the next session
             % cannot silently reuse the finished one's registration. It gets
             % its own registration and its own record, configured in this
-            % same window, no second console.
+            % same window -- no second console.
             self.idSession = '';
             self.idSubject = '';
             self.subjectType = '';
@@ -187,7 +188,7 @@ classdef CenterConsole < handle
             set(self.ui.edDate, 'String', '');
             set(self.ui.butStart, 'Enable', 'off');
 
-            % Stale handle to the run's (now deleted) hidden proxy figure;
+            % Stale handle to the run's (now deleted) hidden proxy figure --
             % drop it so a later Abort has nothing to poke at.
             self.proxyFig = [];
 
@@ -235,14 +236,14 @@ classdef CenterConsole < handle
             % Trial repetition, read by BOTH engines via OrgGet (see
             % useRetries/useRequeue in CenterOutTask.m and CenterInTask.m).
             % Without these two lines the checkboxes would move on screen
-            % while the engines silently kept ConfigOrgParams' defaults;
+            % while the engines silently kept ConfigOrgParams' defaults --
             % so a human session, whose whole point is one deliberate answer
             % per stimulus, would still run the correction procedure.
             % useRequeue is Center-Out only; CenterInTask ignores it.
             params.useRetries = logical(get(self.ui.chkUseRetries, 'Value'));
             params.useRequeue = logical(get(self.ui.chkUseRequeue, 'Value'));
             % Whether that quota is filled by correct trials or by every
-            % presentation, the switch that decides if errors lengthen the
+            % presentation -- the switch that decides if errors lengthen the
             % session or consume a slot. Read by both engines.
             params.quotaByPresentations = logical(get(self.ui.chkQuotaPresentations, 'Value'));
 
@@ -261,9 +262,9 @@ classdef CenterConsole < handle
 
             % Timing fields are gathered generically from whatever edit
             % fields exist in ui.edTiming instead of one hand-written line
-            % per field, adding a row to buildTaskParamsPanel's timingRows
+            % per field -- adding a row to buildTaskParamsPanel's timingRows
             % is enough, nothing here needs to change to match. Shared by
-            % both engines; CenterInTask only reads holdTimeBase/
+            % both engines -- CenterInTask only reads holdTimeBase/
             % holdTimeDelta/ITI/ITIDelta/ITIError via OrgGet and silently
             % ignores the Center-Out-only fields (barDuration,
             % delayStimToRule, barToTargetDelay, cueDuration).
@@ -273,7 +274,7 @@ classdef CenterConsole < handle
             allValid = allValid && timingValid;
 
             % RZ2 analog-joystick gain (see buildTaskParamsPanel for the
-            % fields' rationale); validated the same inline way as
+            % fields' rationale) -- validated the same inline way as
             % Reward/MaxAttempts above, not via gatherFields, since they sit
             % in the Rig geometry column, not ui.edTiming.
             rz2ScaleXVal = str2double(get(self.ui.edRZ2ScaleX, 'String'));
@@ -294,47 +295,21 @@ classdef CenterConsole < handle
             end
             params.rz2ScaleY = rz2ScaleYVal;
 
-            % Kinematics analysis (see buildTaskParamsPanel): the outlier
-            % method reads exactly like Input source above, its two Hampel
-            % settings and the QC sample floor are validated inline like the
-            % RZ2 gains. Gathered regardless of taskType, same as Input
-            % source; CenterInTask.m simply logs no kinematics and never
-            % reads them. Each floor below is the value at which the setting
-            % stops meaning anything, not a taste judgement: a window with no
-            % neighbours, a zero threshold that would replace every sample,
-            % or a sample count too small to differentiate at all.
-            kinOutlierStrings = get(self.ui.popKinOutlier, 'String');
-            params.kinematicsOutlierMethod = kinOutlierStrings{get(self.ui.popKinOutlier, 'Value')};
-
-            hampelHalfWindowVal = str2double(get(self.ui.edHampelHalfWindow, 'String'));
-            if isnan(hampelHalfWindowVal) || hampelHalfWindowVal < 1
-                set(self.ui.edHampelHalfWindow, 'BackgroundColor', [1 0.7 0.7]);
+            joyGainVal = str2double(get(self.ui.edJoyGain, 'String'));
+            if isnan(joyGainVal) || joyGainVal == 0
+                set(self.ui.edJoyGain, 'BackgroundColor', [1 0.7 0.7]);
                 allValid = false;
             else
-                set(self.ui.edHampelHalfWindow, 'BackgroundColor', [1 1 1]);
+                set(self.ui.edJoyGain, 'BackgroundColor', [1 1 1]);
             end
-            params.hampelHalfWindow = hampelHalfWindowVal;
+            params.joyGain = joyGainVal;
 
-            hampelNSigmaVal = str2double(get(self.ui.edHampelNSigma, 'String'));
-            if isnan(hampelNSigmaVal) || hampelNSigmaVal <= 0
-                set(self.ui.edHampelNSigma, 'BackgroundColor', [1 0.7 0.7]);
-                allValid = false;
-            else
-                set(self.ui.edHampelNSigma, 'BackgroundColor', [1 1 1]);
-            end
-            params.hampelNSigma = hampelNSigmaVal;
-
-            kinMinMoveSamplesVal = str2double(get(self.ui.edKinMinMoveSamples, 'String'));
-            if isnan(kinMinMoveSamplesVal) || kinMinMoveSamplesVal < 2
-                set(self.ui.edKinMinMoveSamples, 'BackgroundColor', [1 0.7 0.7]);
-                allValid = false;
-            else
-                set(self.ui.edKinMinMoveSamples, 'BackgroundColor', [1 1 1]);
-            end
-            params.kinematicsMinMoveSamples = kinMinMoveSamplesVal;
+            % Kinematics analysis parameters are no longer in the GUI; the
+            % engine uses ConfigOrgParams' defaults (OrgGet fallbacks in
+            % CenterOutTask.m). Nothing gathered here for them.
 
             % Category colours (hex): independent 2-cat/3-cat sets (see
-            % buildTaskParamsPanel). Gathered regardless of taskType;
+            % buildTaskParamsPanel). Gathered regardless of taskType --
             % CenterInTask.m simply never reads them; CenterOutTask.m needs
             % both sets whenever sessionMode mixes categories (alternate/
             % interleaved) or is plain '2cat'. Passed through as raw hex
@@ -362,7 +337,7 @@ classdef CenterConsole < handle
             if params.taskType == 2
                 % CenterInTask has no bar/length/position grid to gate a
                 % quota per combination like CenterOutTask's Stop-by/quota
-                % below; just a flat "stop once this many hold-in-centre
+                % below -- just a flat "stop once this many hold-in-centre
                 % trials have been rewarded".
                 params.maxCorrectTrials = str2double(get(self.ui.edCenterInTrials, 'String'));
                 % centerRad is the one geometry field that is NOT
@@ -377,11 +352,11 @@ classdef CenterConsole < handle
 
                 % Optional reach-to-target mode (see CenterInTask.m):
                 % centerToTargetDist is pulled out by hand for the same
-                % reason centerRad is above, gathering all of edGeom would
+                % reason centerRad is above -- gathering all of edGeom would
                 % also send bar/cue fields this engine has no use for.
                 params.centerToTargetDist = str2double(get(self.ui.edGeom.centerToTargetDist, 'String'));
                 % Pure-hold-mode-only (see CenterInTask.m's "CENTRE JITTER"
-                % section); gathered regardless of useTargetReach below,
+                % section) -- gathered regardless of useTargetReach below,
                 % since the engine itself is what ignores it in reach mode.
                 jitterVal = str2double(get(self.ui.edCenterInJitter, 'String'));
                 if isnan(jitterVal) || jitterVal < 0
@@ -391,6 +366,7 @@ classdef CenterConsole < handle
                     set(self.ui.edCenterInJitter, 'BackgroundColor', [1 1 1]);
                     params.centerJitterRange = jitterVal;
                 end
+                % Center-In: reach-to-target on/off (no foil here).
                 params.useTargetReach = logical(get(self.ui.chkCenterInReach, 'Value'));
                 if params.useTargetReach
                     weightsStr = get(self.ui.edCenterInWeights, 'String');
@@ -433,11 +409,17 @@ classdef CenterConsole < handle
                     allValid = false;
                 end
                 params.useCue = logical(get(self.ui.chkShowCue, 'Value'));
+                % Pre-training feedback: flash on the wrong-target (foil) pick,
+                % and gray-until-holding for the centre ring (Center-Out uses
+                % its OWN checkbox here; Center-In uses chkHoldColorEffect).
+                params.showErrorFlash = logical(get(self.ui.chkShowErrorFlash, 'Value'));
+                params.useHoldColorEffect = logical(get(self.ui.chkHoldColorEffectCO, 'Value'));
+                params.strictHold = logical(get(self.ui.chkStrictHold, 'Value'));
                 % 0 = white bar (default); 1 = bar drawn in full category colour.
                 params.barColorIntensity = double(get(self.ui.chkBarColour, 'Value'));
                 % false (default) = per-trial colour/position shuffle; true =
                 % every category fixed at its own direction (Short->Right,
-                % Mid->Up, Long->Left); see FixedTargetLayout.m.
+                % Mid->Up, Long->Left) -- see FixedTargetLayout.m.
                 params.fixedTargetLayout = logical(get(self.ui.chkFixedTargetLayout, 'Value'));
                 stopQuota = str2double(get(self.ui.edStopQuota, 'String'));
                 if get(self.ui.popStopMode, 'Value') == 1
@@ -449,7 +431,7 @@ classdef CenterConsole < handle
                 end
             end
 
-            % Off-rig test mode: belt-and-suspenders; offRigToggle_Callback
+            % Off-rig test mode: belt-and-suspenders -- offRigToggle_Callback
             % already locks popInputSource to 'mouse' when this is checked.
             if isfield(self.ui, 'chkOffRig') && get(self.ui.chkOffRig, 'Value')
                 params.inputSource = 'mouse';
@@ -477,7 +459,7 @@ classdef CenterConsole < handle
 
             % Subject type drives BOTH the subject list beside it (named
             % monkeys vs. anonymous PX-n participants) and the two trial
-            % repetition checkboxes at the right-hand end of this panel,
+            % repetition checkboxes at the right-hand end of this panel --
             % which is why those two sit here, next to the control that
             % flips them, rather than in the Task parameters panel with the
             % rest of the engine settings.
@@ -545,13 +527,13 @@ classdef CenterConsole < handle
             % --- Trial repetition (both engines / Center-Out only) --------
             % The two ways a session can run MORE trials than it planned.
             % Checked by default (the monkey configuration), unchecked
-            % automatically when Subject type is Human; see
+            % automatically when Subject type is Human -- see
             % subjectTypeSelect_Callback and ConfigSession.m. Live in the
             % Session panel because the subject is what decides them; the
             % engines read them as orgParams.useRetries/useRequeue.
             self.ui.chkUseRetries = uicontrol('Parent', pSession, 'Style', 'checkbox', ...
                 'String', 'Retries (repeat a failed stimulus)', self.labelFont{:}, ...
-                'BackgroundColor', self.panelBG, 'Position', [960 55 235 20], ...
+                'BackgroundColor', self.panelBG, 'Position', [15 8 245 20], ...
                 'Value', double(d.useRetries), 'Callback', @(~, ~) self.retriesToggle_Callback(), ...
                 'TooltipString', ['Correction procedure: a failed attempt shows the SAME stimulus again ' ...
                 '(reshuffled) up to "Max attempts" times before the sequence moves on, and the stop ' ...
@@ -564,7 +546,7 @@ classdef CenterConsole < handle
                 'is Center-Out only -- Center-In always counts rewarded holds.']);
             self.ui.chkUseRequeue = uicontrol('Parent', pSession, 'Style', 'checkbox', ...
                 'String', 'Requeue original position', self.labelFont{:}, ...
-                'BackgroundColor', self.panelBG, 'Position', [960 32 235 20], ...
+                'BackgroundColor', self.panelBG, 'Position', [270 8 245 20], ...
                 'Value', double(d.useRequeue), ...
                 'TooltipString', ['Center-Out only. When a (bar length, position) combination resolves ' ...
                 'ambiguously -- it only succeeded after a reshuffled retry, or it exhausted every ' ...
@@ -580,8 +562,8 @@ classdef CenterConsole < handle
             % field (target correct trials).
             %
             % Every initial field value below comes from
-            % ConfigOrgParams.getTaskDefaults() (the SAME struct
-            % runTask() merges operator input against) instead of a
+            % ConfigOrgParams.getTaskDefaults() -- the SAME struct
+            % runTask() merges operator input against -- instead of a
             % second, separate literal here. Edit that one file to change
             % a default; it updates both what this console shows on open
             % AND what an engine falls back to if a field is ever missing.
@@ -607,7 +589,7 @@ classdef CenterConsole < handle
                 'Callback', @(~, ~) self.stopModeSelect_Callback());
             % Quota field: correct trials needed per (length,position) combo
             % when "Correct trials" is selected, or number of 48-trial
-            % blocks (1 rep per combo each) when "Blocks" is selected,
+            % blocks (1 rep per combo each) when "Blocks" is selected --
             % same field, meaning set by the popup above.
             if strcmpi(d.stopMode, 'blocks')
                 edStopQuotaInit = num2str(d.numBlocks);
@@ -623,7 +605,7 @@ classdef CenterConsole < handle
             % driven by the Retries checkbox in the Session panel (see
             % retriesToggle_Callback) and always disabled, so the two can
             % never be set to disagree. Its initial value is therefore
-            % derived from useRetries, not read from quotaByPresentations,
+            % derived from useRetries, not read from quotaByPresentations --
             % that field stays in ConfigOrgParams for offline scripts, which
             % are free to set the two independently.
             self.ui.chkQuotaPresentations = uicontrol('Parent', p, 'Style', 'checkbox', ...
@@ -671,7 +653,8 @@ classdef CenterConsole < handle
                 'Delay: bar -> cue',          'delayStimToRule'
                 'Delay: cue -> targets',      'barToTargetDelay'
                 'Cue duration',               'cueDuration'
-                'Target timeout (s)',          'targetDuration'
+                'Reach: decision limit (s)',   'maxDecisionTime'
+                'Reach: movement limit (s)',   'maxExecutionTime'
                 'Success feedback (s)',        'tarHoldFeed'
                 'Error feedback (s)',          'tarErrorFeed'
                 'Min target hold (s)',         'minTarHoldTime'
@@ -681,8 +664,8 @@ classdef CenterConsole < handle
                 };
             self.ui.edTiming = struct();
             rowY = 330;
-            rowPitch = 25;
-            minTarHoldRow = 10;   % 'Min target hold (s)' -- extra gap right below it
+            rowPitch = 23;        % tightened from 25 to fit the extra reach-limit row
+            minTarHoldRow = 11;   % 'Min target hold (s)' -- extra gap right below it
                                 % separates per-trial timing (above) from ITI timing (below)
             for i = 1:size(timingRows, 1)
                 uicontrol('Parent', p, 'Style', 'text', 'String', timingRows{i, 1}, self.labelFont{:}, ...
@@ -698,15 +681,15 @@ classdef CenterConsole < handle
             uicontrol('Parent', p, 'Style', 'text', 'String', 'Rig geometry (pixels)', 'FontWeight', 'bold', ...
                 'FontSize', 10, 'BackgroundColor', self.panelBG, 'Position', [300 357 220 18], ...
                 'HorizontalAlignment', 'left');
-            % centerRad is the diameter of the centre hold window; the
+            % centerRad is the diameter of the centre hold window -- the
             % single geometry parameter that changes how hard the task is to
             % hold, so it is editable rather than baked in. Default 200
-            % matches CenterOutTask's own OrgGet fallback; note that
-            % v2_2-era sessions (centerOutTask_v2_2.m, a superseded code
-            % generation not in this repo) ran 150, so the wider window
-            % means fewer early-exit errors for reasons that have nothing to
-            % do with the subject improving. Pin it explicitly when
-            % comparing sessions across code generations.
+            % matches CenterOutTask's own OrgGet fallback; note the
+            % pre-refactor engine (centerOutTask_v2_2.m, no longer in this
+            % repo) used 150, so a wider window means fewer
+            % early-exit errors for reasons that have nothing to do with the
+            % subject improving. Pin it explicitly when comparing sessions
+            % across code generations.
             geomRows = {
                 'Centre window diameter',   'centerRad'
                 'Target size (diameter)',   'targetRad'
@@ -727,7 +710,7 @@ classdef CenterConsole < handle
             end
 
             % Category colours (hex), independently for 2-cat and 3-cat
-            % trials; CenterOutTask.m builds two separate colour arrays
+            % trials -- CenterOutTask.m builds two separate colour arrays
             % from these instead of one shared table, so a 2-cat trial's
             % Short/Long need not match the colours a 3-cat trial's
             % Short/Long use. Defaults reproduce ColorCategoryMap's built-in
@@ -755,7 +738,7 @@ classdef CenterConsole < handle
             % applies (xCenter + screenXpixels * vx * rz2.scaleX). Was a
             % ConfigOrgParams.m-only literal before; exposed here so gain can
             % be tuned per session without editing code. rz2OffsetY (Y-only
-            % centring offset) stays code-only, rig wiring, not something
+            % centring offset) stays code-only -- rig wiring, not something
             % an operator retunes session to session.
             rowY = rowY - 30;
             uicontrol('Parent', p, 'Style', 'text', 'String', 'RZ2 gain X / Y', self.labelFont{:}, ...
@@ -770,6 +753,17 @@ classdef CenterConsole < handle
                 ['Gain multiplier on the RZ2 analog joystick''s Y axis (Input source = ''rz2adc'' only) -- ' ...
                 'JoystickRelayToTask.m reads this from a second gizmo, APICh2/Adc2, independently of X.']);
 
+            % USB 'joystick' axis gain (Input source = 'joystick' only) -- the
+            % factor that used to be hardcoded -1.3 in ReadCursorPosition.m.
+            rowY = rowY - 30;
+            uicontrol('Parent', p, 'Style', 'text', 'String', 'Joystick gain (USB)', self.labelFont{:}, ...
+                'BackgroundColor', self.panelBG, 'Position', [300 rowY 100 18], 'HorizontalAlignment', 'left');
+            self.ui.edJoyGain = self.mkEdit(p, num2str(d.joyGain), [400 rowY-2 55 22]);
+            set(self.ui.edJoyGain, 'TooltipString', ...
+                ['Gain on the USB joystick''s X and Y axes (Input source = ''joystick'' only), applied on ' ...
+                'top of the screen-pixel scaling in ReadCursorPosition.m. Sign sets axis direction, ' ...
+                'magnitude sets pixels-per-unit travel. Was a hardcoded -1.3.']);
+
             uicontrol('Parent', p, 'Style', 'text', 'String', 'Task options', 'FontWeight', 'bold', ...
                 'FontSize', 10, 'BackgroundColor', self.panelBG, 'Position', [600 357 220 18], ...
                 'HorizontalAlignment', 'left');
@@ -780,13 +774,15 @@ classdef CenterConsole < handle
             uicontrol('Parent', p, 'Style', 'text', 'String', 'Bar set', self.labelFont{:}, ...
                 'BackgroundColor', self.panelBG, 'Position', [600 305 170 18], 'HorizontalAlignment', 'left');
             % Order here defines the popup indices stimulusSetSelection()
-            % maps back to engine names; keep the two in step.
-            stimulusSetStrings = {'12 lengths (full)', '3 prototypes (medians)', ...
-                                  '3 extremes (short/mid/long)'};
+            % maps back to engine names -- keep the two in step.
+            stimulusSetStrings = {'12 lengths (full)', '3 prototypes (midpoints)', ...
+                                  '3 extremes (short/mid/long)', '2 prototypes (Short/Long)'};
             if strcmpi(d.stimulusSet, 'prototypes3')
                 stimulusSetValue = 2;
             elseif strcmpi(d.stimulusSet, 'extremes3')
                 stimulusSetValue = 3;
+            elseif strcmpi(d.stimulusSet, 'prototypes2')
+                stimulusSetValue = 4;
             else
                 stimulusSetValue = 1;
             end
@@ -795,8 +791,9 @@ classdef CenterConsole < handle
                 'Callback', @(~, ~) self.stimulusSetSelect_Callback(), ...
                 'TooltipString', ['Which bar lengths this session runs. Both reduced sets are 3 lengths ' ...
                 'x 4 positions = 12 trials per block instead of 48, one length per category, so the ' ...
-                'targets stay Short/Mid/Long either way. Prototypes: the MEDIAN length of each category ' ...
-                '(4.40 / 5.85 / 7.30 deg VA). Extremes: the shortest bar, the Mid category''s median ' ...
+                'targets stay Short/Mid/Long either way. Prototypes: the MEDIAN length of each ' ...
+                'category (4.40 / 5.85 / 7.30 deg VA). Extremes: the shortest bar, the Mid ' ...
+                'category''s midpoint ' ...
                 'and the longest bar (4.00 / 5.85 / 7.80 deg VA) -- the widest separation the stimulus ' ...
                 'table allows, i.e. the easiest discrimination, for a first session above the training ' ...
                 'phases.']);
@@ -804,7 +801,7 @@ classdef CenterConsole < handle
             % Center-Out only: whether the selection-cue dots actually get
             % drawn during the CUE epoch. Off just blanks that window
             % instead of skipping it, so turning this off does not change
-            % trial timing; see orgParams.useCue in CenterOutTask.m.
+            % trial timing -- see orgParams.useCue in CenterOutTask.m.
             self.ui.chkShowCue = uicontrol('Parent', p, 'Style', 'checkbox', ...
                 'String', 'Show cue', self.labelFont{:}, 'BackgroundColor', self.panelBG, ...
                 'Position', [600 255 200 20], 'Value', double(d.useCue), ...
@@ -825,7 +822,7 @@ classdef CenterConsole < handle
             % Center-Out only: pins every category to its own fixed cardinal
             % direction (Short->Right, Mid->Up, Long->Left; Down unused)
             % instead of DrawTrialLayout.m reshuffling colour/position every
-            % trial; see orgParams.fixedTargetLayout in ConfigOrgParams.m.
+            % trial -- see orgParams.fixedTargetLayout in ConfigOrgParams.m.
             self.ui.chkFixedTargetLayout = uicontrol('Parent', p, 'Style', 'checkbox', ...
                 'String', 'Fixed target layout (no shuffle)', self.labelFont{:}, ...
                 'BackgroundColor', self.panelBG, 'Position', [600 205 300 20], ...
@@ -835,7 +832,7 @@ classdef CenterConsole < handle
                 'When unchecked (default): DrawTrialLayout.m reshuffles which direction/colour each ' ...
                 'category gets every trial.']);
 
-            % Center-In only: flat target trial count; see getSessionParams
+            % Center-In only: flat target trial count -- see getSessionParams
             % for why this differs from Center-Out's Stop-by/quota. Called
             % out as its own bold sub-section (rather than folded into one
             % inline label) since it's the one field here that has nothing
@@ -844,69 +841,64 @@ classdef CenterConsole < handle
             % Deliberately NOT sourced from ConfigOrgParams: this field's own
             % identity is Center-In's flat target-trial count, distinct from
             % the shared maxCorrectTrials Center-Out's "Stop by" quota above
-            % already uses (default 100), giving it its own ConfigOrgParams
+            % already uses (default 100) -- giving it its own ConfigOrgParams
             % field just to hold a second, differently-named default would
             % add a field without removing any duplication, so it stays a
             % literal here.
+            % Every Center-In control lives in this one column. Fixed grid:
+            % header at y=182, then rows every 22 px down to y=6.
             uicontrol('Parent', p, 'Style', 'text', 'String', 'Center-In', 'FontWeight', 'bold', ...
-                'FontSize', 10, 'BackgroundColor', self.panelBG, 'Position', [600 172 220 18], ...
+                'FontSize', 10, 'BackgroundColor', self.panelBG, 'Position', [600 182 220 18], ...
                 'HorizontalAlignment', 'left');
             uicontrol('Parent', p, 'Style', 'text', 'String', 'Target correct trials', self.labelFont{:}, ...
-                'BackgroundColor', self.panelBG, 'Position', [600 144 170 18], 'HorizontalAlignment', 'left');
-            self.ui.edCenterInTrials = self.mkEdit(p, '50', [775 142 60 22]);
-            % Unconditionally rewarded holds; unlike Center-Out's quota
+                'BackgroundColor', self.panelBG, 'Position', [600 160 170 18], 'HorizontalAlignment', 'left');
+            self.ui.edCenterInTrials = self.mkEdit(p, '50', [775 160 60 22]);
+            % Unconditionally rewarded holds -- unlike Center-Out's quota
             % above, this one is never reinterpreted as presentations by the
             % Retries checkbox, so say so where the operator sets it.
             set(self.ui.edCenterInTrials, 'TooltipString', ...
-                ['How many REWARDED centre holds end the session. Failed attempts do not count ' ...
-                'towards it, so a session runs as long as it needs to -- the Trials budget on the ' ...
-                'right is the target, not a cap. Abort is the backstop for a subject that never ' ...
-                'engages.']);
+                ['How many REWARDED centre holds end the session (Center-In only, independent of ' ...
+                'Center-Out''s Stop-by quota). Failed attempts do not count towards it, so a session ' ...
+                'runs as long as it needs to. Abort is the backstop for a subject that never engages.']);
 
-            % Optional reach-to-target mode (CenterInTask.m): adds a single
-            % peripheral target (Right/Up/Left/Down) after the centre hold,
-            % at a position drawn from the weights below instead of
-            % uniformly. Off by default; CenterInTask.m stays pure
-            % hold-and-reward unless this is checked.
+            % Reach-to-target mode (Center-In): adds a single peripheral target
+            % (Right/Up/Left/Down) after the centre hold, at a weighted
+            % position. Off = pure hold. There is NO foil in Center-In (that
+            % lives in the Center-Out pre-training); every Center-In error is a
+            % failed hold/reach and always flashes.
             self.ui.chkCenterInReach = uicontrol('Parent', p, 'Style', 'checkbox', ...
                 'String', 'Reach to target (weighted position)', self.labelFont{:}, ...
-                'BackgroundColor', self.panelBG, 'Position', [600 117 300 20], 'Value', double(d.useTargetReach), ...
-                'TooltipString', ['Adds a peripheral target after the centre hold -- reach it and hold ' ...
-                '(uses the shared Target timeout / Min target hold fields above) before reward. ' ...
-                'Position is drawn from the weights below, not uniformly.']);
-            uicontrol('Parent', p, 'Style', 'text', 'String', 'Target weights (R,U,L,D)', self.labelFont{:}, ...
-                'BackgroundColor', self.panelBG, 'Position', [600 90 170 18], 'HorizontalAlignment', 'left');
-            self.ui.edCenterInWeights = self.mkEdit(p, strjoin(arrayfun(@num2str, d.targetWeights, ...
-                'UniformOutput', false), ','), [775 88 100 22]);
+                'BackgroundColor', self.panelBG, 'Position', [600 138 300 20], ...
+                'Value', double(d.useTargetReach), ...
+                'TooltipString', ['Adds one peripheral target after the centre hold -- reach it and hold ' ...
+                '(Target timeout / Min target hold fields) before reward. Position is drawn from the ' ...
+                'weights below. Off = pure hold-in-centre for reward.']);
 
-            % Pure-hold-mode-only: how far the hold-target can land from true
-            % centre each new trial; see CenterInTask.m's "CENTRE JITTER"
-            % header section. Ignored entirely when "Reach to target" above
-            % is checked (hold-target pins to true centre in that mode).
+            % Reach-only: weighted target position (R,U,L,D).
+            uicontrol('Parent', p, 'Style', 'text', 'String', 'Target weights (R,U,L,D)', self.labelFont{:}, ...
+                'BackgroundColor', self.panelBG, 'Position', [600 116 170 18], 'HorizontalAlignment', 'left');
+            self.ui.edCenterInWeights = self.mkEdit(p, strjoin(arrayfun(@num2str, d.targetWeights, ...
+                'UniformOutput', false), ','), [775 114 100 22]);
+
+            % Reach-only: peripheral target fill colour (hex).
+            uicontrol('Parent', p, 'Style', 'text', 'String', 'Target colour (hex)', self.labelFont{:}, ...
+                'BackgroundColor', self.panelBG, 'Position', [600 94 170 18], 'HorizontalAlignment', 'left');
+            self.ui.edCenterInTargetColor = self.mkEdit(p, d.centerInTargetColor, [775 92 60 22]);
+
+            % Pure-hold-only: how far the hold-target can land from true centre
+            % each new trial -- see CenterInTask.m's "CENTRE JITTER" header.
             uicontrol('Parent', p, 'Style', 'text', 'String', 'Center jitter (+/- px)', self.labelFont{:}, ...
-                'BackgroundColor', self.panelBG, 'Position', [600 62 170 18], 'HorizontalAlignment', 'left');
-            self.ui.edCenterInJitter = self.mkEdit(p, num2str(d.centerJitterRange), [775 60 60 22]);
+                'BackgroundColor', self.panelBG, 'Position', [600 72 170 18], 'HorizontalAlignment', 'left');
+            self.ui.edCenterInJitter = self.mkEdit(p, num2str(d.centerJitterRange), [775 70 60 22]);
             set(self.ui.edCenterInJitter, 'TooltipString', ...
                 ['+/- px random offset of the hold-target''s drawn position each new trial. Only applies ' ...
-                'in PURE hold mode (ignored when "Reach to target" above is checked -- the hold-target ' ...
-                'pins to true centre in that mode instead).']);
+                'in PURE hold mode (ignored in reach mode -- the hold-target pins to true centre).']);
 
-            % Peripheral reach-mode target's fill colour; only ever drawn
-            % when "Reach to target" above is checked. Same hex convention
-            % as the Category colours block (gathered via the same
-            % hexFields loop in getSessionParams).
-            uicontrol('Parent', p, 'Style', 'text', 'String', 'Target colour (hex)', self.labelFont{:}, ...
-                'BackgroundColor', self.panelBG, 'Position', [600 34 170 18], 'HorizontalAlignment', 'left');
-            self.ui.edCenterInTargetColor = self.mkEdit(p, d.centerInTargetColor, [775 32 60 22]);
-
-            % Off (default): the hold-ring is always green, no visual
-            % distinction between "waiting to enter" and "holding". On:
-            % restores the original gray-while-waiting/green-while-holding
-            % cue; see CenterInTask.m's "HOLD-RING COLOUR EFFECT" header
-            % section.
+            % Off (default): the hold-ring is always green. On: restores the
+            % gray-while-waiting/green-while-holding cue -- see CenterInTask.m.
             self.ui.chkHoldColorEffect = uicontrol('Parent', p, 'Style', 'checkbox', ...
                 'String', 'Gray until holding (else always green)', self.labelFont{:}, ...
-                'BackgroundColor', self.panelBG, 'Position', [600 6 300 20], ...
+                'BackgroundColor', self.panelBG, 'Position', [600 4 300 20], ...
                 'Value', double(d.useHoldColorEffect), ...
                 'TooltipString', ['Off (default): the centre hold-ring is always green. On: the ring is ' ...
                 'gray while waiting to enter the centre (or before the hold timer starts), and turns ' ...
@@ -915,9 +907,9 @@ classdef CenterConsole < handle
             % Center-Out only: the two colour-matching drills that precede
             % the categorization task, plus which bar lengths run at all.
             % Their own column because they change what the session IS, not
-            % just one of its parameters; see CenterOutTask.m's "Training
+            % just one of its parameters -- see CenterOutTask.m's "Training
             % phases" block and ParseBarSubset.m.
-            uicontrol('Parent', p, 'Style', 'text', 'String', 'Training (Center-Out)', ...
+            uicontrol('Parent', p, 'Style', 'text', 'String', 'Pre-training Center Out', ...
                 'FontWeight', 'bold', 'FontSize', 10, 'BackgroundColor', self.panelBG, ...
                 'Position', [950 357 220 18], 'HorizontalAlignment', 'left');
             uicontrol('Parent', p, 'Style', 'text', 'String', 'Training phase', self.labelFont{:}, ...
@@ -945,7 +937,7 @@ classdef CenterConsole < handle
                 'target colour to learn at a time.']);
 
             % Valve calibration, used ONLY to report water in the
-            % end-of-session summary (SessionReport.reward); it never
+            % end-of-session summary (SessionReport.reward) -- it never
             % changes what the valve does. Shared by both engines. Sits here
             % rather than beside "Reward valve time" purely because the top
             % row of this panel is full.
@@ -962,51 +954,47 @@ classdef CenterConsole < handle
                 'Leave at 0 if the valve is not calibrated; the report then prints valve-open ' ...
                 'seconds only instead of guessing a volume.']);
 
-            % Post-hoc analysis only (TrialKinematics.m): these change how the
-            % three kinematics columns of trial_data_*.csv are COMPUTED from
-            % the recorded trajectory, never what gets recorded; the
-            % trajectory exports are always written from the raw samples, so
-            % nothing here can be "set wrong" in a way that costs data.
-            % Center-Out only (CenterInTask.m logs no kinematics).
-            uicontrol('Parent', p, 'Style', 'text', 'String', 'Kinematics (analysis)', ...
-                'FontWeight', 'bold', 'FontSize', 10, 'BackgroundColor', self.panelBG, ...
+            % Pre-training Center-Out feedback options (in the space the
+            % removed Kinematics block used to occupy). "Show error flash"
+            % controls ONLY the wrong-target (phase-2 foil) flash; a failed
+            % hold/reach always flashes. Off by default.
+            uicontrol('Parent', p, 'Style', 'text', 'String', 'Pre-training feedback', 'FontWeight', 'bold', ...
+                'FontSize', 10, 'BackgroundColor', self.panelBG, ...
                 'Position', [950 140 220 18], 'HorizontalAlignment', 'left');
-            uicontrol('Parent', p, 'Style', 'text', 'String', 'Outlier method', self.labelFont{:}, ...
-                'BackgroundColor', self.panelBG, 'Position', [950 113 170 18], 'HorizontalAlignment', 'left');
-            kinOutlierStrings = {'kalman', 'hampel'};
-            kinOutlierValue = find(strcmpi(kinOutlierStrings, d.kinematicsOutlierMethod), 1);
-            self.ui.popKinOutlier = uicontrol('Parent', p, 'Style', 'popupmenu', ...
-                'String', kinOutlierStrings, 'Position', [950 91 235 22], 'Value', kinOutlierValue, ...
-                'TooltipString', ['How single-sample position glitches are handled before the ' ...
-                'MOVEMENT trace is resampled and differentiated. kalman (default) = Kalman (RTS) ' ...
-                'smoothing alone. hampel = a median screen of the raw positions first, then that ' ...
-                'same smoothing -- it additionally removes isolated single-sample glitches. ' ...
-                'Everything downstream is identical either way.']);
+            self.ui.chkShowErrorFlash = uicontrol('Parent', p, 'Style', 'checkbox', ...
+                'String', 'Show error flash (wrong-target pick)', self.labelFont{:}, ...
+                'BackgroundColor', self.panelBG, 'Position', [950 114 300 20], ...
+                'Value', double(d.showErrorFlash), ...
+                'TooltipString', ['Off (default): reaching the phase-2 foil (wrong target) does not flash. ' ...
+                'On: it flashes. A failed hold/reach (early exit) always flashes regardless.']);
+            % Gray-until-holding for Center-Out (same effect and default as
+            % Center-In's own checkbox). On (default): centre ring gray while
+            % waiting, green once the hold starts. Off: always green.
+            self.ui.chkHoldColorEffectCO = uicontrol('Parent', p, 'Style', 'checkbox', ...
+                'String', 'Gray until holding', self.labelFont{:}, ...
+                'BackgroundColor', self.panelBG, 'Position', [950 90 300 20], ...
+                'Value', double(d.useHoldColorEffect), ...
+                'TooltipString', ['On (default): the centre hold-ring is gray while waiting to enter / ' ...
+                'before the hold timer starts, green once the hold begins. Off: always green.']);
+            % Strict hold: abort the trial (no reward) if the cursor leaves the
+            % target even once before completing the hold. Off (default): the
+            % lenient behaviour -- leaving resets the hold timer, and returning
+            % to the target and holding minTarHoldTime still earns the reward.
+            self.ui.chkStrictHold = uicontrol('Parent', p, 'Style', 'checkbox', ...
+                'String', 'Strict hold (abort if leaves target)', self.labelFont{:}, ...
+                'BackgroundColor', self.panelBG, 'Position', [950 66 300 20], ...
+                'Value', double(d.strictHold), ...
+                'TooltipString', ['Off (default): leaving the target resets the hold timer; ' ...
+                'returning and holding minTarHoldTime still gives reward. On: any exit from ' ...
+                'the target before completing the hold aborts the trial with no reward (early exit).']);
 
-            % Only read in 'hampel' mode; shown regardless so switching the
-            % popup does not mean re-entering them (see TrialKinematics.m).
-            uicontrol('Parent', p, 'Style', 'text', 'String', 'Hampel window / sigma', self.labelFont{:}, ...
-                'BackgroundColor', self.panelBG, 'Position', [950 62 150 18], 'HorizontalAlignment', 'left');
-            self.ui.edHampelHalfWindow = self.mkEdit(p, num2str(d.hampelHalfWindow), [1100 60 40 22]);
-            self.ui.edHampelNSigma     = self.mkEdit(p, num2str(d.hampelNSigma),     [1145 60 40 22]);
-            set(self.ui.edHampelHalfWindow, 'TooltipString', ...
-                ['Half-width of the median screen''s window, in samples per side (default 3, so 7 ' ...
-                'samples wide). Only used when Outlier method = hampel.']);
-            set(self.ui.edHampelNSigma, 'TooltipString', ...
-                ['How far from its window median a sample must sit before it is replaced, in ' ...
-                'scaled-MADs (default 3 -- the usual "3 sigma"). Lower = more samples replaced. ' ...
-                'Only used when Outlier method = hampel.']);
-
-            uicontrol('Parent', p, 'Style', 'text', 'String', 'Min MOVEMENT samples', self.labelFont{:}, ...
-                'BackgroundColor', self.panelBG, 'Position', [950 34 150 18], 'HorizontalAlignment', 'left');
-            self.ui.edKinMinMoveSamples = self.mkEdit(p, num2str(d.kinematicsMinMoveSamples), [1100 32 40 22]);
-            set(self.ui.edKinMinMoveSamples, 'TooltipString', ...
-                ['QC floor: a trial whose MOVEMENT epoch caught fewer than this many raw samples ' ...
-                'reports NaN for peak/mean velocity and peak acceleration instead of a number. At ' ...
-                'the joystick path''s ~120 Hz effective logging rate a velocity peak spans only a ' ...
-                'handful of samples, so a shorter segment cannot measure one -- the reach happened ' ...
-                'between samples. NumMovementSamples in the CSV still carries the true raw count ' ...
-                'for every trial, so a NaN row stays explainable.']);
+            % Kinematics (post-hoc analysis) controls are intentionally NOT in
+            % this GUI: the engine falls back to ConfigOrgParams' defaults
+            % (kinematicsOutlierMethod/hampel*/kinematicsMinMoveSamples via
+            % OrgGet in CenterOutTask.m), and nothing here ever affected what
+            % gets recorded -- only how the kinematics columns are computed
+            % from the always-raw trajectory. Edit those defaults in
+            % ConfigOrgParams.m if they ever need changing.
         end
 
         function buildRunPanel(self)
@@ -1029,7 +1017,7 @@ classdef CenterConsole < handle
 
             % These 4 boxes (this row's first three + Status above) are the
             % exact same handles whichever engine is running (CenterOutTask
-            % or CenterInTask) writes into every frame; see runTask, which
+            % or CenterInTask) writes into every frame -- see runTask, which
             % points the engine's fixed handle names directly at these
             % controls, so there's one labeled place to watch a run live
             % regardless of which engine launched.
@@ -1049,7 +1037,7 @@ classdef CenterConsole < handle
                 'Enable', 'inactive', 'Position', [410 50 60 22]);
 
             % Elapsed time since the first trial started (HH:MM:SS), ticked
-            % roughly once a second by the running engine; see
+            % roughly once a second by the running engine -- see
             % FormatElapsedTime.m and the "sessionT0" block in
             % CenterOutTask.m/CenterInTask.m's trial loop.
             uicontrol('Parent', pRun, 'Style', 'text', 'String', 'Session time', self.labelFont{:}, ...
@@ -1059,7 +1047,7 @@ classdef CenterConsole < handle
 
             % Off-rig test mode: run the REAL engine (whichever Task type is
             % selected) driven by the mouse, with the offrig_mocks stubs for
-            % Rewards/CloseTask on the path instead of the rig's real ones;
+            % Rewards/CloseTask on the path instead of the rig's real ones --
             % so the whole GUI + task window flow can be checked end-to-end
             % (registration -> params -> Start -> live status -> the actual
             % PTB task window) on a normal computer, no valve/joystick/UDP/
@@ -1074,12 +1062,12 @@ classdef CenterConsole < handle
                 'FontSize', 8, 'BackgroundColor', self.panelBG, 'ForegroundColor', [0.4 0.4 0.4], ...
                 'Position', [15 7 830 30], 'HorizontalAlignment', 'left');
 
-            % Live per-block / per-category breakdown (Center-Out only;
+            % Live per-block / per-category breakdown (Center-Out only --
             % Center-In has neither, and blanks this box on launch). The
             % Status line above answers "how far into the session are we";
             % this answers "how far into THIS block, and which categories
-            % still owe trials"; figures the end-of-session report also
-            % carries, but by then too late to act on. Written once per
+            % still owe trials" -- figures that used to exist only in the
+            % end-of-session report, too late to act on. Written once per
             % trial by the engine through the handles struct (see runTask),
             % same as every other live readout here.
             %
@@ -1102,7 +1090,7 @@ classdef CenterConsole < handle
         % =====================================================================
 
         function offRigToggle_Callback(self)
-            % Off-rig mode drives the task with the mouse; force the Input
+            % Off-rig mode drives the task with the mouse -- force the Input
             % source popup to match and lock it, so it can't silently
             % disagree with the checkbox (e.g. left on 'joystick' while
             % off-rig is checked).
@@ -1131,28 +1119,63 @@ classdef CenterConsole < handle
 
         function stimulusSetSelect_Callback(self)
             % A reduced Bar set carries one length per category, so there is
-            % no finer length structure for a 2-category framing to split;
+            % no finer length structure for a 2-category framing to split --
             % it could only regroup the three prototypes, which tests
             % nothing. Rather than let the operator pick a combination the
             % engine would then have to override at launch (it does, for
-            % offline scripts; see CenterOutTask's oneLengthPerCategory
+            % offline scripts -- see CenterOutTask's oneLengthPerCategory
             % guard), force Session mode to 3cat here and lock it, so the
             % console cannot show a mode the session will not run.
             setName = self.stimulusSetSelection();
+            modes = get(self.ui.popSessionMode, 'String');
             if strcmpi(setName, 'full12')
                 set(self.ui.popSessionMode, 'Enable', 'on');
+            elseif strcmpi(setName, 'prototypes2')
+                % One Short bar and one Long bar, no Mid: the only framing this
+                % set can run is 2-category, so lock the mode there (mirror of
+                % the 3cat lock below, and of CenterOutTask's prototypes2
+                % guard).
+                set(self.ui.popSessionMode, 'Value', find(strcmpi(modes, '2cat'), 1), ...
+                    'Enable', 'off');
             else
-                modes = get(self.ui.popSessionMode, 'String');
                 set(self.ui.popSessionMode, 'Value', find(strcmpi(modes, '3cat'), 1), ...
                     'Enable', 'off');
             end
             self.taskTypeSelect_Callback();   % the length count just changed -> refresh the budget
         end
 
+        function applyTaskTypeEnableStates(self)
+            % Grey out the controls that do not apply to the selected Task
+            % type: Center-Out-only fields when Center-In is chosen, and the
+            % Center-In-only fields when Center-Out is chosen. Rig geometry,
+            % Reward, timing and Input source are shared by all modes and are
+            % never greyed (every mode depends on rig geometry). Session mode
+            % and Max attempts are deliberately left out here -- they have
+            % their own callbacks (bar-set lock / Retries) that own their
+            % enable state, and forcing them here would fight those.
+            isCenterIn = get(self.ui.popTaskType, 'Value') == 2;
+            onoff = {'on', 'off'};
+            coState = onoff{isCenterIn + 1};    % Center-Out-only: off when Center-In
+            ciState = onoff{~isCenterIn + 1};   % Center-In-only:  off when Center-Out
+            coHandles = {'popStimulusSet','chkShowCue','chkBarColour','popStopMode', ...
+                'edStopQuota','popTrainingPhase','edBarSubset','chkShowErrorFlash', ...
+                'chkHoldColorEffectCO','chkStrictHold','edColor3CatShort','edColor3CatMid','edColor3CatLong', ...
+                'edColor2CatShort','edColor2CatLong'};
+            ciHandles = {'chkCenterInReach','edCenterInWeights','edCenterInTargetColor', ...
+                'edCenterInJitter','chkHoldColorEffect','edCenterInTrials'};
+            for i = 1:numel(coHandles)
+                if isfield(self.ui, coHandles{i}), set(self.ui.(coHandles{i}), 'Enable', coState); end
+            end
+            for i = 1:numel(ciHandles)
+                if isfield(self.ui, ciHandles{i}), set(self.ui.(ciHandles{i}), 'Enable', ciState); end
+            end
+        end
+
         function taskTypeSelect_Callback(self)
+            self.applyTaskTypeEnableStates();
             % Trials budget (edTargetTrials) is otherwise only written by
             % whichever engine actually runs (see runTask's rh.editTrainRepe,
-            % written at runtime by CenterOutTask.m/CenterInTask.m); so
+            % written at runtime by CenterOutTask.m/CenterInTask.m) -- so
             % switching Task type alone would leave it showing whatever the
             % OTHER engine last computed there. Preview the real quota here
             % instead, using the same formulas those engines apply at
@@ -1167,7 +1190,7 @@ classdef CenterConsole < handle
                 stopQuota = str2double(get(self.ui.edStopQuota, 'String'));
                 [~, numLengths] = self.stimulusSetSelection();
                 % A bar subset shrinks the set the quota is applied over, so
-                % the preview has to honour it too; otherwise selecting one
+                % the preview has to honour it too -- otherwise selecting one
                 % length would still advertise the full set's budget. Falls
                 % back to the whole set when the field does not parse; the
                 % red-box validation in getSessionParams is what blocks Start.
@@ -1214,7 +1237,7 @@ classdef CenterConsole < handle
         function humanNumEdit_Callback(self)
             % Flag a bad participant number as it is typed rather than at
             % Register, and drop any registration made under the PREVIOUS
-            % number; otherwise changing 3 to 4 would leave the session
+            % number -- otherwise changing 3 to 4 would leave the session
             % still registered, and running, as PX-3.
             [~, ok] = self.humanParticipantId();
             if ok
@@ -1237,7 +1260,7 @@ classdef CenterConsole < handle
             %    discards.
             % 2. What the stop quota counts. Insisting on a correct trial
             %    per combination is the SAME intent as the correction
-            %    procedure (keep showing it until it comes out right) so
+            %    procedure -- keep showing it until it comes out right -- so
             %    it belongs to retries being on. With retries off the quota
             %    counts presentations instead: one deliberate answer per
             %    slot, a wrong one costs that slot. The combination this
@@ -1265,7 +1288,7 @@ classdef CenterConsole < handle
         function registerSession_Callback(self)
             if self.running
                 % A run owns the registration it was launched with (runTag,
-                % params snapshot, output files); re-registering mid-run
+                % params snapshot, output files) -- re-registering mid-run
                 % would silently disagree with them.
                 warndlg('A run is in progress. Abort it before registering a new session.', ...
                     'Run in progress');
@@ -1282,11 +1305,11 @@ classdef CenterConsole < handle
             % Plain char throughout, NOT string(): this console has to run on
             % the rig's Computer 2 (MATLAB R2016b), the release the string
             % class was introduced in, where graphics properties such as an
-            % edit box's 'String' do not reliably accept a string scalar;
+            % edit box's 'String' do not reliably accept a string scalar --
             % see the set(edDate, 'String', currDate) below.
             if get(self.ui.popSubjectType, 'Value') == 2
                 % Human: the typed number IS the identity. Refuse to register
-                % on a bad one; an id is not something to guess at, and a
+                % on a bad one -- an id is not something to guess at, and a
                 % session that starts unregistered cannot be traced back to
                 % its participant afterwards.
                 [participantId, ok] = self.humanParticipantId();
@@ -1309,7 +1332,7 @@ classdef CenterConsole < handle
                 self.subjectType = 'monkey';
                 self.idSubject = monkeys{get(self.ui.popSubject, 'Value')};
                 % Local session id: first 3 letters of the monkey's name
-                % (e.g. "ROM" for Romina), no database/NAS involved, just
+                % (e.g. "ROM" for Romina) -- no database/NAS involved, just
                 % makes the id recognizable by monkey at a glance in the
                 % outputs/ folder listing. No timestamp here: runTag
                 % (start_Callback below) already appends its own
@@ -1332,7 +1355,7 @@ classdef CenterConsole < handle
                 warndlg('Register a session first.', 'No session');
                 return;
             end
-            % The task window (rig or off-rig) always needs Psychtoolbox,
+            % The task window (rig or off-rig) always needs Psychtoolbox --
             % catch a missing install here with one clear message instead of
             % a cryptic error surfacing from inside PsychImaging('OpenWindow',
             % ...) later.
@@ -1348,7 +1371,7 @@ classdef CenterConsole < handle
             % paints invalid boxes red (NaN = empty or unparseable string,
             % e.g. a comma decimal separator or a stray letter). Blocking
             % here is strictly better than letting NaN reach the task engine,
-            % where it would hang silently; e.g. centerRad = NaN makes
+            % where it would hang silently -- e.g. centerRad = NaN makes
             % CheckInCircle always return false, so the task freezes in
             % ENTER_CENTER without any error message.
             [~, fieldsValid] = self.getSessionParams();
@@ -1359,8 +1382,17 @@ classdef CenterConsole < handle
 
             rng('shuffle');   % fresh pseudorandom sequence for this session
             runTag = sprintf('sess%s_%s', self.idSession, datestr(now, 'dd-mmm-yyyy_HH-MM'));
+            % Grouped by month, then by session day, then by SESSION: each run
+            % gets its own folder named by the runTag (outputs/<yyyy-mm>/
+            % <yyyy-mm-dd>/<runTag>/), matching CenterOutTask.m/CenterInTask.m
+            % so the params snapshot saved below lands in the SAME session
+            % folder as that run's data files. Using the shared runTag (not an
+            % independently re-read clock) is what guarantees the console and
+            % the task agree on the folder. mkdir creates every intermediate
+            % folder.
             outMonth = datestr(now, 'yyyy-mm');
-            outDir = fullfile('outputs', outMonth);
+            outDay   = datestr(now, 'yyyy-mm-dd');
+            outDir = fullfile('outputs', outMonth, outDay, runTag);
             if ~exist(outDir, 'dir'), mkdir(outDir); end
 
             isOffRig = get(self.ui.chkOffRig, 'Value') == 1;
@@ -1379,7 +1411,7 @@ classdef CenterConsole < handle
             end
 
             self.setRunning(false);
-            % The run is over; however it ended (completed, aborted from
+            % The run is over -- however it ended (completed, aborted from
             % the Abort button or the engine's own stop key, or crashed).
             % Close the session out here, in the ONE place every one of
             % those paths comes back through.
@@ -1390,7 +1422,7 @@ classdef CenterConsole < handle
             % Only raises the stop flag the engine polls every frame. The
             % engine then unwinds on its own (saving data, printing its
             % report, closing devices) and returns into start_Callback,
-            % which is where the session is actually cleared, clearing it
+            % which is where the session is actually cleared -- clearing it
             % from here would wipe the identity out from under a run that is
             % still writing files under it.
             if ~isempty(self.proxyFig) && isgraphics(self.proxyFig)
@@ -1429,7 +1461,7 @@ classdef CenterConsole < handle
             %
             % dlgTrainingMain must be a SEPARATE, hidden figure: both
             % engines call close() on it, both when a run finishes normally
-            % and from their top-level catch block on a crash, that must
+            % and from their top-level catch block on a crash -- that must
             % not be this console window itself, or the whole console would
             % vanish the moment a run ends or errors out.
             self.proxyFig = figure('Visible', 'off', 'HandleVisibility', 'off', ...
@@ -1446,7 +1478,7 @@ classdef CenterConsole < handle
             % 7th, OPTIONAL field, on top of the 6 fixed ones above: the
             % per-block/per-category breakdown box. Both engines guard it
             % with isfield, so a caller that builds handles by hand and
-            % doesn't supply it (OffrigPlay) still runs; it just doesn't
+            % doesn't supply it (OffrigPlay) still runs -- it just doesn't
             % get the breakdown.
             rh.textBreakdown = self.ui.textBreakdown;
 
@@ -1462,7 +1494,7 @@ classdef CenterConsole < handle
             % Off-rig test mode: use the offrig_mocks stubs (CloseTask/
             % Reward) so no real reward valve / UDP / amplifiers are
             % touched, and never leave that folder shadowing the rig's real
-            % functions once this run ends; offrig_mocks/Rewards.m's own
+            % functions once this run ends -- offrig_mocks/Rewards.m's own
             % header spells out why ("Do NOT add this folder to the MATLAB
             % path when running on the rig, or no reward will be
             % delivered"). Without this, an off-rig run would hit an undefined
@@ -1501,7 +1533,7 @@ classdef CenterConsole < handle
             % ui.textStatus/edGoodTrials/edPercentCorrect/edTargetTrials are
             % the same handles the engine just wrote into throughout the
             % run (see rh above), so they're already showing the final
-            % status ("Task done", good trials count, etc.) here, nothing
+            % status ("Task done", good trials count, etc.) here -- nothing
             % to copy back.
             if isCenterIn
                 CenterInTask(orgParams);
@@ -1515,17 +1547,20 @@ classdef CenterConsole < handle
         function [setName, numLengths] = stimulusSetSelection(self)
             % The Bar set popup, resolved to the name the engine expects and
             % the length count the Trials budget preview needs. One mapping
-            % for both, rather than a copy each carrying an implicit
-            % "anything that is not full12 has 3 lengths"; true with two
-            % options, and silently wrong the moment a fourth is added.
-            % Popup order is defined in buildTaskParamsPanel.
+            % for both, because they used to carry a copy each with an
+            % implicit "anything that is not full12 has 3 lengths" -- which
+            % happened to be true with two options and silently would not be
+            % with a fourth. Popup order is defined in buildTaskParamsPanel.
             switch get(self.ui.popStimulusSet, 'Value')
                 case 2
-                    setName = 'prototypes3';   % one median length per category
+                    setName = 'prototypes3';   % one midpoint length per category
                     numLengths = 3;
                 case 3
-                    setName = 'extremes3';     % shortest / Mid median / longest
+                    setName = 'extremes3';     % shortest / Mid midpoint / longest
                     numLengths = 3;
+                case 4
+                    setName = 'prototypes2';   % Short/Long midpoints, 2-category
+                    numLengths = 2;
                 otherwise
                     setName = 'full12';
                     numLengths = 12;
@@ -1538,7 +1573,7 @@ classdef CenterConsole < handle
             % empty, a decimal, a negative, a comma decimal separator or a
             % stray letter (str2double gives NaN for those, the same way
             % every other numeric field in this console is validated).
-            % Rejecting rather than rounding is deliberate; 3.5 is a
+            % Rejecting rather than rounding is deliberate -- 3.5 is a
             % mistyped id, and silently filing the session under PX-4 would
             % attach it to a different participant.
             cfg = ConfigSession();
@@ -1552,7 +1587,7 @@ classdef CenterConsole < handle
 
         function invalidateRegistration(self)
             % Any change to WHO the session is for makes the id already in
-            % the Session ID box wrong, so drop it and disable Start;
+            % the Session ID box wrong, so drop it and disable Start --
             % same reasoning as endSession, which does this once a run has
             % finished. Without it, switching subject type or editing the
             % participant number after registering would launch the next run
@@ -1594,7 +1629,7 @@ classdef CenterConsole < handle
             % plain number (empty box, comma decimal separator, stray letter).
             % NaN is not empty, so it would pass OrgGet's isempty guard and
             % reach the task as a real value, where it silently poisons every
-            % arithmetic comparison it touches; a centre-window radius of
+            % arithmetic comparison it touches -- a centre-window radius of
             % NaN means the cursor can never register as inside, so the task
             % hangs in ENTER_CENTER forever without any error. Catching it
             % here, before Start fires, is strictly better than catching it

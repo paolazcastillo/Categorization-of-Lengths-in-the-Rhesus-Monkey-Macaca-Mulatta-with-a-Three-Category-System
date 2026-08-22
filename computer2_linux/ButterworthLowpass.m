@@ -1,6 +1,7 @@
 function [y, applied] = ButterworthLowpass(x, fs, cutoffHz)
 % BUTTERWORTHLOWPASS  Zero-phase 2nd-order Butterworth low-pass, applied
 % forward and backward (so 4th-order magnitude, exactly zero phase lag).
+% Paola Castillo 2026-08-04
 %
 %   INPUT
 %     x        : [N x 1] or [N x D] signal, UNIFORMLY sampled (columns
@@ -11,11 +12,11 @@ function [y, applied] = ButterworthLowpass(x, fs, cutoffHz)
 %   OUTPUT
 %     y        : same size as x
 %     applied  : false when the filter was skipped and y == x (too few
-%                samples, or a cutoff at/above Nyquist); so a caller can
+%                samples, or a cutoff at/above Nyquist) -- so a caller can
 %                report honestly instead of assuming filtering happened
 %
 %   TOOLBOX-FREE on purpose: butter() and filtfilt() are Signal Processing
-%   Toolbox, which the rig's MATLAB (R2016b) is not guaranteed to have;
+%   Toolbox, which the rig's MATLAB (R2016b) is not guaranteed to have --
 %   same reason NormInvNoTB.m exists here. filter() is core MATLAB.
 %
 %   DESIGN. Bilinear transform of the normalised 2nd-order Butterworth
@@ -24,7 +25,7 @@ function [y, applied] = ButterworthLowpass(x, fs, cutoffHz)
 %   filter, not fc/2-ish above it as a naive s->z substitution gives.
 %
 %   ZERO PHASE. Filtering forward only would delay the signal by a few ms at
-%   this cutoff, fine for a plot, wrong here, where the point is WHEN the
+%   this cutoff -- fine for a plot, wrong here, where the point is WHEN the
 %   velocity/acceleration peak occurs. Running the same filter over the
 %   time-reversed output cancels the phase exactly (and squares the
 %   magnitude response, hence "4th-order magnitude" above: the effective
@@ -32,7 +33,7 @@ function [y, applied] = ButterworthLowpass(x, fs, cutoffHz)
 %
 %   EDGES. Both passes are seeded with the filter's steady state for a
 %   constant input (zi below) and run on a signal extended by odd reflection
-%   about each endpoint, the same construction filtfilt uses. Without it,
+%   about each endpoint -- the same construction filtfilt uses. Without it,
 %   each pass starts from rest and produces a step-response transient at the
 %   trace's start and end, precisely where a reach's launch and landing
 %   (its largest accelerations) live.
@@ -51,7 +52,7 @@ wasRow = isrow(y);
 if wasRow, y = y(:); end
 N = size(y, 1);
 if N <= NFACT
-    % Too short for a valid reflection: leave the trace untouched, and
+    % Too short for a valid reflection: leave the trace untouched -- and
     % restore the caller's orientation, since a pass-through that silently
     % returned a column for a row input would break arithmetic downstream
     % (a row/column mismatch does not error under implicit expansion, it

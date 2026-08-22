@@ -1,8 +1,9 @@
 function deliveredSec = Rewards(amount, n, uSynapse)
 % REWARDS  Deliver `n` reward pulses of `amount` seconds each, over the UDP
 %   link to the Synapse computer (Computer 1).
+%   Paola Castillo 2026-07-31
 %
-%   Wire protocol matches what computer1_synapse/CommunicationCategTaskACTX.m
+%   Wire protocol matches what computer1_synapse/Communication_CategTask_ACTX.m
 %   already listens for: an evaluable string "reward=1;rewDuration=<ms>;"
 %   (see that file's header comment). Its main loop does
 %   `eval(tmpStr)` on whatever arrives, setting its local `reward`/
@@ -28,9 +29,9 @@ function deliveredSec = Rewards(amount, n, uSynapse)
 %          Callers that don't care can ignore it; every existing call site
 %          used to invoke this as a bare statement and still can.
 %
-%   Each pulse is followed by a short pause so CommunicationCategTaskACTX.m's
+%   Each pulse is followed by a short pause so Communication_CategTask_ACTX.m's
 %   polling loop has time to consume one message (reset rewDuration to 0)
-%   before the next one arrives, mirroring the inter-pulse gap the
+%   before the next one arrives -- mirroring the inter-pulse gap the
 %   parallel-port version of this function (WaitSecs(0.3) between pulses)
 %   already uses.
 deliveredSec = 0;
@@ -47,7 +48,7 @@ deliveredSec  = n * rewDurationMs / 1000;           % post-clamp: what the valve
 % Wait out the CLAMPED pulse (rewDurationMs), not the raw `amount`: the
 % valve only ever opens for what was actually sent on the wire, so waiting
 % the un-clamped request would idle the task an extra second per pulse on a
-% mis-set 2 s reward, time charged to the trial for a pulse that ended
+% mis-set 2 s reward -- time charged to the trial for a pulse that ended
 % long before. This is the same duration deliveredSec reports.
 pulseSec = rewDurationMs / 1000;
 for i = 1:n

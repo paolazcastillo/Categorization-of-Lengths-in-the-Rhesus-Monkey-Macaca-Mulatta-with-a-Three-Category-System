@@ -4,6 +4,7 @@ function HideCursorSafe(taskWindow)
 % mouse-device resolution can fail even though taskWindow itself is a
 % valid onscreen window, which must not be allowed to abort an
 % otherwise-working session.
+% Paola Castillo 2026-07-31
 try
     HideCursor(taskWindow);
 catch ME_hideCursor

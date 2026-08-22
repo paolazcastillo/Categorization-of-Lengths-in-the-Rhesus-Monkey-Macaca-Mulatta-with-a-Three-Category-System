@@ -1,13 +1,14 @@
 function [outlierIndices, cleanedData] = HampelOutlierDetector(data, windowSize, thresholdMAD)
     % HAMPELOUTLIERDETECTOR  Robust outlier rejection via a moving median.
+    %   Paola Castillo 2026-07-31
     %
     %   For each point, compares it to the moving median (not mean) of its
     %   window; flags/replaces it if its deviation from that median exceeds
-    %   thresholdMAD scaled-MADs (not std); a single spike barely moves
+    %   thresholdMAD scaled-MADs (not std) -- a single spike barely moves
     %   either statistic of its own neighborhood, so it can't inflate the
     %   very threshold used to catch it the way a mean+stdev test would.
     %   Built on movmedian, so it's O(n log w) rather than a per-point
-    %   sliding-window loop; irrelevant at small per-trial n, but avoids
+    %   sliding-window loop -- irrelevant at small per-trial n, but avoids
     %   the one quadratic term that would otherwise sit in the pipeline.
     %
     %   Both the centre statistic AND the spread statistic are LOCAL: the
@@ -77,7 +78,7 @@ function [outlierIndices, cleanedData] = HampelOutlierDetector(data, windowSize,
         % stationary cursor reading the same value repeatedly) the local
         % MAD is exactly 0, so the threshold collapses to 0 and ANY nonzero
         % deviation, however small, would be flagged. Points in such a
-        % window are left alone; there is no local scale against which to
+        % window are left alone -- there is no local scale against which to
         % judge them.
         threshold = thresholdMAD * localMAD;
         colOutliers = (localMAD > 0) & (deviations > threshold);

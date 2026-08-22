@@ -2,6 +2,7 @@ function [tarPos, tarColor, correctTarget, trialColor, trialDir, centerCueColor,
         AssignTargets(idx, trialNumCat, trialDirs, trialColorRows, ...
                     trialCorrectSlot, trialCatIndices, colorArray, Targets4Dir)
 % ASSIGNTARGETS  Build the per-trial targets from the precomputed layout.
+%   Paola Castillo 2026-07-31
 %
 %   Works for 2- or 3-category trials: only the first numCat slots are
 %   populated; the rest stay empty and are neither drawn nor hit-tested
@@ -25,7 +26,7 @@ function [tarPos, tarColor, correctTarget, trialColor, trialDir, centerCueColor,
 %     colorArray       : [3 x 3] RGB matrix; row c = category c's colour.
 %                        CenterOutTask.m passes whichever of its two
 %                        colorArray2Cat/colorArray3Cat tables matches THIS
-%                        trial's category count (see placeTargets), not
+%                        trial's category count (see placeTargets) -- not
 %                        always ColorCategoryMap().allCategoryRGBs() itself.
 %     Targets4Dir      : [4 x 4] rect matrix; row d = direction d's rect.
 %

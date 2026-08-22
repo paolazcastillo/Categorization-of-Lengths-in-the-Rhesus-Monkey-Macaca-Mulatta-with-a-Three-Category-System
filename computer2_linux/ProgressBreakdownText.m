@@ -1,11 +1,12 @@
 function lines = ProgressBreakdownText(blockNow, blocksTotal, trialInBlock, blockSize, ...
         catNames, remainingByCat, nCat2Block, nCat3Block)
 % PROGRESSBREAKDOWNTEXT  Live "what is left" breakdown for the console's Run panel.
+%   Paola Castillo 2026-08-04
 %
 %   The console's Status line already reports the session as a whole
-%   ("trial 37/480 (block 2/10), 143 correct left"). This is the level
+%   ("trial 37/480 (block 2/10) -- 143 correct left"). This is the level
 %   below it: how far the CURRENT block has got, and how the correct trials
-%   still owed split across the bar-length categories; numbers that
+%   still owed split across the bar-length categories -- numbers that
 %   otherwise only appeared in the end-of-session report (SessionReport.blocks
 %   / .session), i.e. after the session, when they can no longer inform it.
 %
@@ -44,7 +45,7 @@ end
 lines{3} = ['    ' strjoin(parts, '    ')];
 
 % How this block's slots were scheduled between the 2-category and
-% 3-category framings, fixed for the whole block under sessionMode
+% 3-category framings -- fixed for the whole block under sessionMode
 % '2cat'/'3cat'/'alternate', mixed under 'interleaved'.
 lines{4} = sprintf('This block''s scheduled mix:   2-cat %d   /   3-cat %d', ...
     nCat2Block, nCat3Block);

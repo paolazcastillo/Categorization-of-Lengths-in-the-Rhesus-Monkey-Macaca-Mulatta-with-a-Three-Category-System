@@ -1,14 +1,15 @@
 function [trialBarIndices, trialPositions] = BuildTrialSequence(seqSize, numBars)
 % BUILDTRIALSEQUENCE  Balanced pseudorandom (bar, direction) trial sequence.
+%   Paola Castillo 2026-07-31
 %
 %   Build a balanced pseudorandom sequence of (bar, direction) pairs such that
 %   no more than 2 identical bar indices occur in a row and no identical
-%   (bar, direction) pair occurs twice consecutively, both held WITHIN and
+%   (bar, direction) pair occurs twice consecutively -- both held WITHIN and
 %   ACROSS the 12-trial blocks. Falls back to greedy constraint-aware placement
 %   when no random permutation satisfies it.
 %
 %   Shared by CenterOutTask.m (the real-time engine) and
-%   offrig_mocks/TestLogic.m (off-rig, no-Psychtoolbox tests); this logic
+%   offrig_mocks/TestLogic.m (off-rig, no-Psychtoolbox tests) -- this logic
 %   has no hardware dependency, so it lives here once instead of as a local
 %   function copied in both places.
 %
@@ -23,7 +24,7 @@ function [trialBarIndices, trialPositions] = BuildTrialSequence(seqSize, numBars
 maxConsecBarIdx = 3;   % reject the 3rd identical bar in a row -> max run = 2
 if numBars == 1
     % Only one bar length in the set (e.g. an operator-selected single
-    % training length; see ParseBarSubset.m): every possible sequence is
+    % training length -- see ParseBarSubset.m): every possible sequence is
     % one long run of that bar, so the run constraint can never be
     % satisfied. Leaving it on would burn 5000 doomed permutations per
     % block and then warn on every greedy slot. 0 disables it; the
@@ -127,7 +128,7 @@ ok = 1;
 % Reject the maxConsec-th identical bar in a row: if the maxConsec-1
 % immediately-preceding bars all equal thisBar. Missing history counts as a
 % mismatch, so early slots are never falsely rejected. maxConsec < 2 means
-% the caller disabled this rule entirely (single-bar set; see the top of
+% the caller disabled this rule entirely (single-bar set -- see the top of
 % BuildTrialSequence); without this guard the empty `for` below would leave
 % same = 1 and reject every candidate.
 if maxConsec >= 2

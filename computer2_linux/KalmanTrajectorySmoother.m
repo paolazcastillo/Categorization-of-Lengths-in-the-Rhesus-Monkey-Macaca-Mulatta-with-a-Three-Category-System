@@ -1,11 +1,12 @@
 function [smoothed, nGated] = KalmanTrajectorySmoother(t, xy, measSigmaPx, jerkSigmaPxPerS3, gateSigma)
 % KALMANTRAJECTORYSMOOTHER  Fixed-interval Kalman smoother (RTS) for a
 % cursor position trace sampled at IRREGULAR times.
+% Paola Castillo 2026-08-04
 %
 %   INPUT
 %     t                : [N x 1] sample times in SECONDS, strictly increasing
 %     xy               : [N x D] positions in px (columns filtered
-%                        independently, typically D = 2 for [X Y])
+%                        independently -- typically D = 2 for [X Y])
 %     measSigmaPx      : std of the position reading noise, px (default 2)
 %     jerkSigmaPxPerS3 : process-noise std of the jerk, px/s^3 (default 1e5)
 %     gateSigma        : innovation gate, in sigmas (default 4; Inf = off)
@@ -13,7 +14,7 @@ function [smoothed, nGated] = KalmanTrajectorySmoother(t, xy, measSigmaPx, jerkS
 %   OUTPUT
 %     smoothed         : [N x D] smoothed positions at the SAME t
 %     nGated           : how many measurements were rejected by the gate
-%                        (summed over columns), QC signal for the caller
+%                        (summed over columns) -- QC signal for the caller
 %
 %   MODEL. Constant-acceleration per axis, state [pos; vel; acc], driven by
 %   continuous white jerk. The rig's samples are not evenly spaced (frames
@@ -30,28 +31,28 @@ function [smoothed, nGated] = KalmanTrajectorySmoother(t, xy, measSigmaPx, jerkS
 %
 %   WHY SMOOTHED, NOT FILTERED. A forward-only Kalman filter is causal: its
 %   estimate lags the true position by roughly one correlation time, which
-%   would shift and flatten exactly the thing this feeds, the peak of the
+%   would shift and flatten exactly the thing this feeds -- the peak of the
 %   velocity/acceleration profile. The backward RTS pass uses the whole
 %   trial (already fully recorded before the caller runs, so there is
 %   nothing online about this) and gives a zero-lag estimate.
 %
 %   OUTLIER REJECTION. A plain Kalman update has no defence against a single
 %   bad ADC read: it just pulls the state toward it. The innovation gate
-%   is this filter's equivalent of the Hampel screen, a measurement whose
+%   restores what the Hampel screen used to do here -- a measurement whose
 %   innovation exceeds gateSigma * sqrt(S) (S = innovation variance, i.e.
 %   the filter's own prediction of how far off that reading should plausibly
 %   be) is dropped, and only the PREDICT step is kept for that instant. That
 %   is self-scaling: the gate is wide where the filter is genuinely
 %   uncertain (start of trial, after a long gap) and tight where it is not,
 %   so it doesn't need a separate noise scale of its own. Gated samples are
-%   not deleted from the output, the smoother fills them from the
+%   not deleted from the output -- the smoother fills them from the
 %   dynamics, keeping t/xy row-aligned for the caller.
 %
 %   DEFAULTS. measSigmaPx = 2 px is the reading jitter of the rig's joystick
 %   ADC path (GetMouse has OS-level smoothing and is quieter; using the
 %   noisier figure for both just smooths the mouse path slightly more).
 %   jerkSigmaPxPerS3 = 1e5 admits a reach whose acceleration swings by
-%   ~1e4 px/s^2 over ~100 ms; fast enough not to clip a real launch, tight
+%   ~1e4 px/s^2 over ~100 ms -- fast enough not to clip a real launch, tight
 %   enough that per-sample jitter isn't tracked as real motion. Both are
 %   physical quantities, not tuning knobs in arbitrary units: re-measure
 %   them (a stationary hold gives measSigmaPx; the accel traces of real
@@ -72,8 +73,8 @@ function [smoothed, nGated] = KalmanTrajectorySmoother(t, xy, measSigmaPx, jerkS
 %   clean data and would be read as a slow subject), above it the filter
 %   starts tracking measurement noise as real acceleration. The residual
 %   positive bias is inherent to double-differentiating a noisy trace; it is
-%   consistent across trials, so between-condition comparisons (what this
-%   measure is for) are unaffected, but the absolute number should not be
+%   consistent across trials, so between-condition comparisons -- what this
+%   measure is for -- are unaffected, but the absolute number should not be
 %   quoted as an exact peak.
 if nargin < 3 || isempty(measSigmaPx),      measSigmaPx      = 2;    end
 if nargin < 4 || isempty(jerkSigmaPxPerS3), jerkSigmaPxPerS3 = 1e5;  end
@@ -92,7 +93,7 @@ q = jerkSigmaPxPerS3 ^ 2;
 
 dtAll = diff(t);
 % Initial acceleration uncertainty: what the jerk model can build up over a
-% typical inter-sample interval, times a slack factor, a wide but not
+% typical inter-sample interval, times a slack factor -- a wide but not
 % absurd prior, so the first few samples set the acceleration instead of
 % being dragged toward a hard 0.
 accStd0 = jerkSigmaPxPerS3 * 20 * median(dtAll);
@@ -105,7 +106,7 @@ for d = 1:size(xy, 2)
     Fk = zeros(3, 3, N);                      % F that produced step k from k-1
 
     % Seed from the first two samples: position measured, velocity from the
-    % first difference (its variance is 2R/dt^2, both endpoints are noisy).
+    % first difference (its variance is 2R/dt^2 -- both endpoints are noisy).
     dt0 = dtAll(1);
     xp(:, 1)    = [z(1); (z(2) - z(1)) / dt0; 0];
     Pp(:, :, 1) = diag([R, 2 * R / dt0 ^ 2, accStd0 ^ 2]);

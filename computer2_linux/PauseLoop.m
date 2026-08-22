@@ -5,6 +5,7 @@ function nextEpoch = PauseLoop(taskWindow, black_c, orgParams, kbDevice, useKbQu
 % state-machine switch below falls through to no case on the frame right
 % after a pause (nextEpoch gets reassigned on the very next iteration by
 % whichever epoch was active when space was first pressed).
+% Paola Castillo 2026-07-31
 %
 % IMPORTANT: callers MUST DISCARD the return value. nextEpoch = 0 is
 % intentionally not a valid epoch in either engine; it is only a sentinel

@@ -1,10 +1,24 @@
-function [peakVel, meanVel, peakAccel, nSamples] = TrialKinematics(trajBuf, trajN, trialNum, moveEpoch, interpGridDt, cutoffHz, outlierMethod, hampelHalfWindow, hampelNSigma, minMoveSamples, minMoveDurSec)
+function [peakVel, meanVel, peakAccel, nSamples] = TrialKinematics(trajBuf, trajN, trialNum, moveEpochs, interpGridDt, cutoffHz, outlierMethod, hampelHalfWindow, hampelNSigma, minMoveSamples, minMoveDurSec)
 % TRIALKINEMATICS  Peak/mean cursor speed (px/s) and peak acceleration
-% (px/s^2) during one trial's MOVEMENT epoch, from the per-frame trajectory
-% buffer (columns: TrialNum, Time, X, Y, Epoch, Block, TrialNumInBlock, Attempt).
-% NaN when there are fewer than 2 MOVEMENT samples to differentiate (e.g.
+% (px/s^2) during one trial's movement-analysis window, from the per-frame
+% trajectory buffer (columns: TrialNum, Time, X, Y, Epoch, Block,
+% TrialNumInBlock, Attempt).
+% NaN when there are fewer than 2 matching samples to differentiate (e.g.
 % an early-exit trial that never left the centre), and NaN again when the
 % segment is too short to RESOLVE a peak (see the QC guard below).
+%
+% moveEpochs: scalar OR vector of numeric epoch codes (TaskEpoch.m values)
+% to include; a row is used whenever its Epoch column matches ANY of them
+% (ismember). CenterOutTask.m currently passes DECISION_TIME+MOVEMENT together
+% (its kinematicsEpochs, defined once next to EP so this function and
+% SaveMovementTrajectory.m's export always agree on the same window); an
+% older/simpler caller can still pass a single code (e.g. EP.MOVEMENT.Value
+% alone) to reproduce the original MOVEMENT-only behaviour. See
+% CenterOutTask.m's kinematicsEpochs header comment for what changes when
+% DECISION_TIME is included: it is mostly near-static centre-hold/decision time,
+% not reach time, so folding it in changes meanVel in particular from a
+% pure "reach speed" figure into one that also depends on how long the
+% subject took to leave the centre.
 %
 % interpGridDt (seconds, optional, default 0.008): the fixed resampling
 % grid used below. MUST match whichever input source actually produced
@@ -35,7 +49,7 @@ function [peakVel, meanVel, peakAccel, nSamples] = TrialKinematics(trajBuf, traj
 % only; see HampelFilter.m.
 %
 % minMoveSamples (optional, default 5) and minMoveDurSec (optional, default
-% [] = disabled) are the QC guard: a MOVEMENT segment with fewer than
+% [] = disabled) are the QC guard: a segment with fewer than
 % minMoveSamples raw samples, or (when set) spanning less than minMoveDurSec,
 % reports peakVel/meanVel/peakAccel as NaN instead of a number. This is the
 % fast-but-under-resolved case, not an outlier and not a filter artifact: at
@@ -47,8 +61,8 @@ function [peakVel, meanVel, peakAccel, nSamples] = TrialKinematics(trajBuf, traj
 % sampled. Same honesty as the peakVel < 1e-6 guard further down (report
 % not-observed rather than a misleading value), for the opposite regime.
 %
-% nSamples (raw count of MOVEMENT-tagged rows found for this trial) is a QC
-% signal for the caller: it's how many real measurements back the
+% nSamples (raw count of rows found for this trial matching moveEpochs) is a
+% QC signal for the caller: it's how many real measurements back the
 % interpolation below, regardless of how it changes peakVel/peakAccel;
 % lets the exported CSV be audited per-trial instead of just eyeballing
 % magnitudes. It counts rows FOUND, which is also what feeds the smoothing
@@ -60,17 +74,18 @@ function [peakVel, meanVel, peakAccel, nSamples] = TrialKinematics(trajBuf, traj
 % explains why the kinematics came back NaN.
 %
 % Differentiating the raw samples directly isn't comparable across trials:
-% a trial with more raw MOVEMENT samples (e.g. a slower reach, or one that
-% landed on more oversampled frames) has more chances to catch both a
-% higher true peak AND a noise spike than a trial with few samples, so
-% peakVel/peakAccel would be biased by sample count, not just by how the
-% subject actually moved. Fix: resample the position trace onto a FIXED
-% interpGridDt grid (shape-preserving cubic Hermite; smooth, no overshoot,
-% unlike a plain cubic spline) before differentiating, so every trial's
-% velocity/acceleration is computed at the SAME effective resolution no
-% matter how many raw points fed the interpolation. Plain linear
-% interpolation would not fix this: it reproduces the same raw segment
-% slope at every inserted point, changing nothing about the peak.
+% a trial with more raw matching samples (e.g. a slower reach, a longer
+% DECISION_TIME dwell if that epoch is included, or one that landed on more
+% oversampled frames) has more chances to catch both a higher true peak AND
+% a noise spike than a trial with few samples, so peakVel/peakAccel would be
+% biased by sample count, not just by how the subject actually moved. Fix:
+% resample the position trace onto a FIXED interpGridDt grid
+% (shape-preserving cubic Hermite; smooth, no overshoot, unlike a plain
+% cubic spline) before differentiating, so every trial's velocity/
+% acceleration is computed at the SAME effective resolution no matter how
+% many raw points fed the interpolation. Plain linear interpolation would
+% not fix this: it reproduces the same raw segment slope at every inserted
+% point, changing nothing about the peak.
 % interpGridDt should match the source's MEASURED native sampling
 % resolution, not go finer (see header note above for 'joystick' vs.
 % 'rz2adc'), asking pchip to resolve detail where no real measurement
@@ -98,13 +113,13 @@ if nargin < 9 || isempty(hampelNSigma)
     hampelNSigma = 3;       % scaled-MADs, 'hampel' mode only
 end
 if nargin < 10 || isempty(minMoveSamples)
-    minMoveSamples = 5;     % raw MOVEMENT samples needed to resolve a peak
+    minMoveSamples = 5;     % raw samples needed to resolve a peak
 end
 if nargin < 11
     minMoveDurSec = [];     % [] disables the duration half of the QC guard
 end
 peakVel = nan;  meanVel = nan;  peakAccel = nan;
-rows = trajBuf(1:trajN, 1) == trialNum & trajBuf(1:trajN, 5) == moveEpoch;
+rows = trajBuf(1:trajN, 1) == trialNum & ismember(trajBuf(1:trajN, 5), moveEpochs);
 nSamples = nnz(rows);
 if nSamples < 2, return; end
 
@@ -254,12 +269,13 @@ vel = hypot(diff(xxGrid), diff(yyGrid)) ./ gridDt;
 peakVel = max(vel);
 meanVel = mean(vel);
 
-% A MOVEMENT epoch runs from leaving the centre to reaching the target, so
-% real net displacement is guaranteed, if the interpolated trace shows
-% essentially zero displacement throughout, the actual reach happened
-% faster than any raw sample caught it (e.g. the oversampled reads after
-% an already-completed single-frame reach), not that the subject truly
-% stood still. Report that honestly as NaN (not observed) instead of a
+% With moveEpochs = MOVEMENT only, real net displacement was guaranteed (a
+% MOVEMENT epoch runs from leaving the centre to reaching the target), so a
+% near-zero interpolated trace meant the reach happened faster than any raw
+% sample caught it. With DECISION_TIME included that guarantee no longer holds
+% on its own -- DECISION_TIME can itself be near-static -- but the same
+% not-observed logic still applies whenever the WHOLE matched segment shows
+% essentially zero displacement: report NaN (not observed) rather than a
 % misleading 0 (measured stationary).
 if peakVel < 1e-6
     peakVel = nan;  meanVel = nan;  return;

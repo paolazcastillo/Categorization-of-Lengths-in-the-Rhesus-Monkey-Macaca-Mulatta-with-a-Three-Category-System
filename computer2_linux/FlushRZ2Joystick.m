@@ -1,13 +1,14 @@
 function nDropped = FlushRZ2Joystick(rz2)
 % FLUSHRZ2JOYSTICK  Throw away everything the relay has queued and start the
 % link fresh. Call at any point where the task loop was NOT draining for an
-% appreciable time; the samples that piled up during that gap describe a
+% appreciable time -- the samples that piled up during that gap describe a
 % period the task was not running, so they are not data, they are backlog.
+% Paola Castillo 2026-08-04
 %
 % WHY THIS EXISTS. SetupRZ2Joystick.m opens the socket well before the trial
 % loop starts, and Computer 1 begins streaming 1014 samples/s at once. In
 % between sit the rest of setup and, critically, ConfirmRecordingLink.m's
-% MODAL questdlg; the task sits there for as long as the operator takes to
+% MODAL questdlg -- the task sits there for as long as the operator takes to
 % read a checklist. Ten seconds of that queues ~10,000 samples. Two things
 % then go wrong on the first frames of the session:
 %
@@ -17,7 +18,7 @@ function nDropped = FlushRZ2Joystick(rz2)
 %   * Worse, and silently: ReadRZ2Joystick.m anchors its time base on the
 %     FIRST sample it ever drains, pairing that sample's index with the
 %     local clock at that moment. If that sample was captured ten seconds
-%     ago, the whole session's trajectory clock is shifted by ten seconds,
+%     ago, the whole session's trajectory clock is shifted by ten seconds --
 %     and CenterOutTask.m derives t.leaveCenter from that clock
 %     (trigTime = sessionT0 + trajBuf(row,2)/1000), so decision/reaction
 %     times on the rz2adc path would be wrong by that offset. Flushing
@@ -28,7 +29,7 @@ function nDropped = FlushRZ2Joystick(rz2)
 % throws: a flush failing must not be able to take down a session.
 %
 % OUTPUT nDropped : datagrams discarded (udpport) or bytes discarded (legacy
-%                   udp object, that interface only exposes BytesAvailable).
+%                   udp object -- that interface only exposes BytesAvailable).
 %                   Reported by the caller, and accumulated on
 %                   UserData.nFlushed for the teardown summary.
 nDropped = 0;

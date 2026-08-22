@@ -1,5 +1,6 @@
 function CenterInTask(orgParams)
 % CENTERINTASK  Simple centre-hold training task.
+%   Paola Castillo 2026-07-31
 %
 %   No bar, no cue, no categories: the subject must move the cursor
 %   (joystick or mouse, orgParams.inputSource) into the centre window and
@@ -9,12 +10,12 @@ function CenterInTask(orgParams)
 %
 %   OPTIONAL REACH-TO-TARGET MODE (orgParams.useTargetReach, console
 %   checkbox "Reach to target"): adds a single peripheral target
-%   (Right/Up/Left/Down) after the centre hold succeeds; the subject must
+%   (Right/Up/Left/Down) after the centre hold succeeds -- the subject must
 %   then reach it and hold inside it (targetDuration/minTarHoldTime, the
 %   same shared timing fields CenterOutTask.m reads) before reward. Off by
 %   default, which reproduces this engine's original hold-only behaviour
 %   exactly. Target position is drawn from orgParams.targetWeights (console
-%   "Target weights (R,U,L,D)") via BuildWeightedTargetSequence.m, a
+%   "Target weights (R,U,L,D)") via BuildWeightedTargetSequence.m -- a
 %   balanced pseudorandom sequence, not i.i.d. sampling, so realized
 %   proportions don't drift and runs of the same direction stay bounded.
 %   Per-direction correct/attempt counts are reported at session end (see
@@ -23,11 +24,11 @@ function CenterInTask(orgParams)
 %   CENTRE JITTER: in PURE HOLD mode (useTargetReach off) the hold-target's
 %   drawn position is always offset by +/- orgParams.centerJitterRange
 %   (console "Center jitter (+/- px)", default 150 px) each NEW trial
-%   (retries keep the same spot); the whole point of pure hold mode is
+%   (retries keep the same spot) -- the whole point of pure hold mode is
 %   that the subject has to find a new spot every trial; only how far that
 %   spot can land is adjustable. The cursor's own screen mapping stays
 %   anchored to the TRUE centre regardless, so the subject has to actually
-%   move the joystick/mouse to find wherever the target landed; the
+%   move the joystick/mouse to find wherever the target landed -- the
 %   "neutral" joystick position does not track the jitter.
 %
 %   With REACH mode on (useTargetReach), the hold-target is pinned to the
@@ -38,12 +39,12 @@ function CenterInTask(orgParams)
 %
 %   TARGET COLOUR (orgParams.centerInTargetColor, console "Target colour
 %   (hex)" under Center-In): the peripheral reach-mode target's fill
-%   colour; only ever drawn when useTargetReach is on. Default 00FF00
+%   colour -- only ever drawn when useTargetReach is on. Default 00FF00
 %   (green), via OrgGetColor.m/HexToRGB.m, same convention as
 %   CenterOutTask.m's category colours.
 %
 %   HOLD-RING COLOUR EFFECT (orgParams.useHoldColorEffect, console "Gray
-%   until holding"): OFF by default; the centre hold-ring is always
+%   until holding"): OFF by default -- the centre hold-ring is always
 %   green, with no visual distinction between "waiting to enter" and
 %   "holding". ON restores the original cue: gray while waiting to enter
 %   the centre (or before the hold timer has actually started), green once
@@ -53,19 +54,19 @@ function CenterInTask(orgParams)
 %   init, async-flip cursor oversampling, pause handling) with
 %   CenterOutTask.m via the same helper files, so a run looks and
 %   behaves consistently across both engines, just with the bar/cue/
-%   target epochs removed and no per-length/category bookkeeping;
+%   target epochs removed and no per-length/category bookkeeping --
 %   there is nothing here to categorize.
 %
 %   INPUT  orgParams : struct of GUI handles and run parameters (from
 %          CenterConsole.m's runTask, or built by hand by a caller like
-%          OffrigPlay.m, same 5-field handles contract as
+%          OffrigPlay.m -- same 5-field handles contract as
 %          CenterOutTask.m).
 %   Local helpers: initTimes, printCenterInSummary. Setup/teardown
 %   plumbing shared with CenterOutTask.m (OrgGet, BlankScreen,
 %   ForceCloseScreen, ConfirmRecordingLink, HideCursorSafe,
 %   SetupKeyboardDevice, SafeKbCheck, SetupJoystick, SetupSynapseUDP,
 %   InitTaskHandles, ReadCursorPosition, PauseLoop, SaveTrajectory) is NOT
-%   local; see their own files in centerTask/.
+%   local -- see their own files in centerTask/.
 if nargin < 1 || isempty(orgParams), orgParams = struct(); end
 
 % ===========================================================================
@@ -74,7 +75,7 @@ if nargin < 1 || isempty(orgParams), orgParams = struct(); end
 %   The session runs until `maxCorrectTrials` hold-in-centre trials have
 %   been rewarded (orgParams.maxCorrectTrials, console field "Center-In:
 %   target correct trials"). Unlike CenterOutTask.m there is no finite
-%   pseudorandom stimulus sequence to exhaust; every trial is identical
+%   pseudorandom stimulus sequence to exhaust -- every trial is identical
 %   (enter, hold), so a subject that never engages can run indefinitely;
 %   the operator's Abort button is the backstop, same as it would be on the
 %   rig for any training task.
@@ -82,7 +83,7 @@ if nargin < 1 || isempty(orgParams), orgParams = struct(); end
 %   orgParams.quotaByPresentations (CenterOutTask.m's presentation-quota
 %   switch, and the console's "Quota counts presentations" readout) is
 %   deliberately not read by this engine. There it makes the session a
-%   fixed length while keeping the (length, position) design balanced,
+%   fixed length while keeping the (length, position) design balanced --
 %   every combination shown the same number of times, an error costing its
 %   own slot. This engine has no such grid to balance, so the same switch
 %   would only mean "stop after N attempts, however many earned reward",
@@ -122,7 +123,7 @@ try
 % Status/GUI handles: auto-create a minimal status figure if the caller
 % didn't pass one, same handles contract CenterOutTask.m uses (see
 % that file's own SETUP section for why: it's what OffrigPlay.m and
-% CenterConsole.m's runTask both point at every frame); see InitTaskHandles.m.
+% CenterConsole.m's runTask both point at every frame) -- see InitTaskHandles.m.
 if ~isfield(orgParams, 'handles') || isempty(orgParams.handles)
     orgParams.handles = InitTaskHandles('CenterInTask');
 end
@@ -133,9 +134,15 @@ if isfield(orgParams, 'runTag') && ~isempty(orgParams.runTag)
 end
 sessionDate = datestr(now, 'dd-mm-yyyy');
 
-% --- Output folder: all session results go to outputs/<yyyy-mm>/ --------
+% --- Output folder: outputs/<yyyy-mm>/<yyyy-mm-dd>/<runTag>/ ------------
+% Grouped by month, then by session day, then by SESSION (each run in its own
+% folder named by the runTag, which includes the start hour), same convention
+% as CenterOutTask.m. mkdir creates every intermediate folder; the day/hour
+% are taken from the session start. The session folder is the shared runTag
+% `d`, so all files of one run land together with the console's snapshot.
 outMonth = datestr(now, 'yyyy-mm');
-outDir   = fullfile('outputs', outMonth);
+outDay   = datestr(now, 'yyyy-mm-dd');
+outDir   = fullfile('outputs', outMonth, outDay, d);
 if ~exist(outDir, 'dir'), mkdir(outDir); end
 
 % --- Console transcript -> session_report_centerIn_<runTag>.txt ----------
@@ -179,24 +186,37 @@ ITI_error   = OrgGet(orgParams, 'ITIError',  3);    % inter-trial interval after
 rewTime     = OrgGet(orgParams, 'Reward', 0.15);
 
 % --- Reach-to-target mode (optional) --------------------------------------
-% Off by default; reproduces the original hold-only engine exactly.
+% Off by default -- reproduces the original hold-only engine exactly.
 % targetDuration/targetHoldTime reuse the SAME shared console fields
 % CenterOutTask.m reads (targetDuration, minTarHoldTime): one Timing column,
 % both engines, no separate reach-only fields needed.
 useTargetReach = logical(OrgGet(orgParams, 'useTargetReach', 0));
 targetWeights  = OrgGet(orgParams, 'targetWeights', [0.25 0.25 0.25 0.25]);
 targetDuration = OrgGet(orgParams, 'targetDuration', 5);      % reach timeout
-targetHoldTime = OrgGet(orgParams, 'minTarHoldTime', 0);      % hold-in-target time (0 = touch is enough)
+targetHoldTime = OrgGet(orgParams, 'minTarHoldTime', 0.05);   % hold-in-target time before it counts as good (s); 0 = touch is enough
+
+% Short label for this run's mode, shown in the console's progress-breakdown
+% box (paintProgressStatus) so it reads as a Center-In run with its own
+% correct-trials count instead of the blank the Center-Out breakdown leaves.
+% Center-In is pure hold (with jitter) or reach to a SINGLE target -- there is
+% no foil here (that lives in the Center-Out pre-training). Every Center-In
+% error is a failure to complete the hold/reach, so all of them flash (see
+% EP.ERROR_FB); there is no wrong-target case to suppress.
+if useTargetReach
+    centerInModeLabel = 'reach (1 target)';
+else
+    centerInModeLabel = 'pure hold';
+end
 
 % --- Colours ---------------------------------------------------------------
 white_c = [255 255 255];  black_c = [0 0 0];
 green_c = [0 255 0];      red_c   = [255 0 0];
 gray_c  = [140 140 140];
 
-% Peripheral reach-mode target fill colour, console-configurable hex
+% Peripheral reach-mode target fill colour -- console-configurable hex
 % (OrgGetColor.m/HexToRGB.m, same convention as CenterOutTask.m's category
-% colours). Defaults to the green_c constant. Only ever drawn when
-% useTargetReach is on (see the render block below).
+% colours). Default matches the green_c constant this used to be hardcoded
+% to. Only ever drawn when useTargetReach is on (see the render block below).
 targetColor = OrgGetColor(orgParams, 'centerInTargetColor', green_c);
 
 % Gray-while-waiting/green-while-holding hold-ring effect: OFF by default
@@ -215,7 +235,7 @@ end
 orgParams.trainTrials = maxCorrectTrials;
 set(orgParams.handles.editTrainRepe, 'String', num2str(maxCorrectTrials));
 % The console's per-block/per-category breakdown box belongs to
-% CenterOutTask; this task has neither blocks nor categories, so blank it
+% CenterOutTask -- this task has neither blocks nor categories, so blank it
 % rather than leave a previous Center-Out run's numbers standing next to a
 % Center-In session. Optional field: handles built by hand (OffrigPlay, or
 % anything predating it) simply don't have it.
@@ -236,7 +256,7 @@ holdAchievedLog   = nan(1, max(maxCorrectTrials * 3, 10));   % QC: actual hold d
 trialLogFile = fullfile(outDir, ['trial_data_centerIn_' d '.csv']);
 fid_log = fopen(trialLogFile, 'w');
 % HoldTimeRequired_s is what was ASKED of this trial; HoldAchieved_s is what
-% the subject actually produced, measured sample-to-sample; see the
+% the subject actually produced, measured sample-to-sample -- see the
 % pooling warning at the BOOKKEEP epoch, which explains why that column is
 % not comparable with sessions recorded before it became a measurement.
 fprintf(fid_log, 'Date,TrialNum,Attempt,HoldTimeRequired_s,TimeToEnterCentre_s,HoldAchieved_s,IsCorrect,ErrorType,PrevTrialCorrect,TargetDir,ReachTime_s,HoldX_px,HoldY_px\n');
@@ -247,7 +267,7 @@ fprintf('Trial log file created: %s\n', trialLogFile);
 screens = Screen('Screens');
 screenNumber = max(screens);
 [taskWindow, windowRect] = PsychImaging('OpenWindow', screenNumber, white_c);
-% Guaranteed screen/priority/cursor teardown on ANY exit path; see the
+% Guaranteed screen/priority/cursor teardown on ANY exit path -- see the
 % matching comment in CenterOutTask.m's SETUP for why this is
 % independent of the rig-side CloseTask() helper.
 ptbForceCleanup = onCleanup(@() ForceCloseScreen(taskWindow));
@@ -260,6 +280,7 @@ Screen('BlendFunction', taskWindow, 'GL_SRC_ALPHA', 'GL_ONE_MINUS_SRC_ALPHA');
 
 pointerRad     = 15;
 pointer_offset = -220;
+joyGain = OrgGet(orgParams, 'joyGain', -1.3);   % USB 'joystick' axis gain (console-editable); rz2adc/mouse unaffected
 FixPoint = [-15 15 0 0; 0 0 -15 15];
 [xCenter, yCenter] = RectCenter(windowRect);
 % Console-configurable, same OrgGet-with-fallback pattern as the timing
@@ -272,10 +293,10 @@ centerRad    = OrgGet(orgParams, 'centerRad', 200);   % centre-window diameter (
 circleSize   = [0 0 centerRad centerRad];
 % centerJitterRange: +/- px random offset of the hold-target's DRAWN
 % position, ALWAYS applied in pure hold mode (console-configurable; there
-% is still no "fixed at centre" option; the whole point of pure hold
+% is still no "fixed at centre" option -- the whole point of pure hold
 % mode is that the subject has to find a new spot every trial, only how
 % FAR that spot can land is adjustable). Drawn fresh once per TRIAL (not
-% per retry; see "repeat_trial == 0" below), same convention as the
+% per retry -- see "repeat_trial == 0" below), same convention as the
 % reach-mode target direction. Deliberately does NOT change xCenter/
 % yCenter themselves: the cursor's own screen mapping (ReadCursorPosition
 % below) stays anchored to the TRUE centre, so the subject must actually
@@ -288,16 +309,16 @@ centerCircle = CenterRectOnPointd(circleSize, holdX, holdY);
 
 % --- Reach-mode target geometry (only meaningful if useTargetReach) -------
 % Same convention as CenterOutTask.m: targets are targetRad-sized circles
-% (independent of centerRad; same shared console field CenterOutTask.m
+% (independent of centerRad -- same shared console field CenterOutTask.m
 % reads) placed on a ring of radius centerToTargetDist*1.27 around the four
 % cardinal directions. dy = -sin(a) so 90deg renders ABOVE screen-centre
-% (PTB's y-axis grows downward); matches the Right/Up/Left/Down
+% (PTB's y-axis grows downward) -- matches the Right/Up/Left/Down
 % convention SessionReport.m's matrices already use for CenterOutTask.
 % Targets4Dir is recomputed every trial (below, in the trial-start block)
 % around holdX/holdY instead of the true centre, so it moves together with
 % the jittered hold-target.
-targetRad          = OrgGet(orgParams, 'targetRad', 200);          % peripheral target diameter (px)
-centerToTargetDist = OrgGet(orgParams, 'centerToTargetDist', 200);
+targetRad          = OrgGet(orgParams, 'targetRad', 180);          % peripheral target diameter (px)
+centerToTargetDist = OrgGet(orgParams, 'centerToTargetDist', 320);
 targetRadius  = centerToTargetDist * 1.27;
 targetDirsDeg = [0 90 180 270];   % Right, Up, Left, Down
 nDir = numel(targetDirsDeg);
@@ -320,7 +341,7 @@ currentTargetDir  = 1;
 currentTargetRect = Targets4Dir(1, :);
 
 % Per-direction tallies (meaningful only when useTargetReach; harmless,
-% all-zero otherwise); see printCenterInDirMatrix.
+% all-zero otherwise) -- see printCenterInDirMatrix.
 totalPerDir          = zeros(1, nDir);   % attempts where this direction's target was shown
 correctPerDir        = zeros(1, nDir);
 errReachTimeoutPerDir = zeros(1, nDir);
@@ -331,7 +352,7 @@ for iDir = 1:nDir, reachTimePerDir{iDir} = []; end
 % --- Hardware: keyboard, joystick, UDP -----------------------------------
 % Input source: 'joystick' (rig, default), 'mouse' (off-rig play/testing),
 % or 'rz2adc' (a SECOND, ADC-wired analog joystick relayed over UDP from
-% Computer 1's JoystickRelayToTask.m; see SetupRZ2Joystick.m). useMouse
+% Computer 1's JoystickRelayToTask.m -- see SetupRZ2Joystick.m). useMouse
 % still gates keyboard-device selection, the reward UDP link, and the
 % recording-link gate below exactly as before; useRZ2 additionally picks
 % WHICH real device supplies the cursor, AND (further down, where trajBuf
@@ -349,7 +370,7 @@ KEY_ESCAPE = KbName('ESCAPE');
 KEY_R      = KbName('r');
 RestrictKeysForKbCheck([KEY_SPACE KEY_ESCAPE KEY_R]);
 % See SetupKeyboardDevice.m for the full rationale (X11 master-keyboard /
-% XTEST / hotkey-device filtering, KbQueue-over-KbCheck preference),
+% XTEST / hotkey-device filtering, KbQueue-over-KbCheck preference) --
 % shared with CenterOutTask.m.
 [kbDevice, useKbQueue] = SetupKeyboardDevice(useMouse, [KEY_SPACE KEY_ESCAPE KEY_R]);
 joy = [];  rz2 = [];
@@ -377,7 +398,7 @@ uSynapse = [];
 if ~useMouse
     uSynapse = SetupSynapseUDP(remoteHost, localHost);
     % Tell Computer 1 whether to actually run the RZ2 analog-joystick relay
-    % (see SetRZ2RelayEnable.m); so it's only active while THIS machine
+    % (see SetRZ2RelayEnable.m) -- so it's only active while THIS machine
     % has Input source = 'rz2adc' selected, not for Computer 1's whole
     % "Run" session regardless of input source.
     SetRZ2RelayEnable(useRZ2, uSynapse);
@@ -385,7 +406,7 @@ end
 
 h = orgParams.handles.dlgTrainingMain;
 
-% --- Pre-run safety gate: confirm the recording amplifiers / Synapse link;
+% --- Pre-run safety gate: confirm the recording amplifiers / Synapse link --
 % Same rationale as CenterOutTask.m: UDP is connectionless, so reward
 % markers never fail even with the amplifiers off. Skipped off-rig.
 if ~useMouse && ~ConfirmRecordingLink()
@@ -402,7 +423,7 @@ setOnce_Trial = 1;
 repeat_trial  = 0;
 pauseTask     = 0;
 % Set true the moment the operator ends the session early (console Abort
-% button or in-window ESC key); distinguishes an operator-stopped run
+% button or in-window ESC key) -- distinguishes an operator-stopped run
 % from a normal quota-completed one in the end-of-session status text
 % (search "Task stopped" below). Same as CenterOutTask.m.
 abortedByOperator = false;
@@ -413,20 +434,20 @@ abortedByOperator = false;
 % advances. Console-editable via orgParams.maxStimAttempts.
 %
 % orgParams.useRetries false (the console unchecks it automatically for a
-% human participant; see ConfigSession.m) clamps that to a single attempt
+% human participant -- see ConfigSession.m) clamps that to a single attempt
 % per trial, whatever maxStimAttempts says. Same clamp, same reasoning, as
 % CenterOutTask.m: with a ceiling of 1, `stimAttempt < maxStimAttempts` is
 % never true, so repeat_trial and the "attempt n/m" status text switch
 % themselves off with no second code path. (This engine has no requeue at
-% all (it has no stimulus, hence no (length, position) combination to
-% verify) so orgParams.useRequeue means nothing here.)
+% all -- it has no stimulus, hence no (length, position) combination to
+% verify -- so orgParams.useRequeue means nothing here.)
 maxStimAttempts = OrgGet(orgParams, 'maxStimAttempts', 5);
 if ~logical(OrgGet(orgParams, 'useRetries', true))
     maxStimAttempts = 1;
 end
 stimAttempt     = 1;
 
-% Same async-flip cursor oversampling as CenterOutTask.m; see that
+% Same async-flip cursor oversampling as CenterOutTask.m -- see that
 % file's SETUP section for the full rationale (decouples the trajectory
 % sample rate from the screen's Hz, extra samples taken free inside the
 % pending-flip wait).
@@ -443,30 +464,30 @@ awaitTargetOnset = 0;
 
 % --- Joystick/cursor trajectory buffer (X,Y over time) --------------------
 % One row per frame: [TrialNum, Time, X, Y, Epoch, Attempt]. No Block/
-% TrialNumInBlock columns here; there is no length/position rotation to
+% TrialNumInBlock columns here -- there is no length/position rotation to
 % split on, every trial is the same task. SaveTrajectory.m detects this
 % 6-column layout from the column count and writes the matching CSV header.
 % Time is MILLISECONDS SINCE THE FIRST TRIAL STARTED (sessionT0, captured
 % once below the first time the setOnce_Trial block runs), not an absolute
-% clock reading; so trajectory_*.csv always starts at ~0 regardless of
+% clock reading -- so trajectory_*.csv always starts at ~0 regardless of
 % how long MATLAB/Psychtoolbox had been running before this session began.
 % ONE CONVENTION FOR EVERY ROW, same as CenterOutTask.m: a row is stamped
-% at the moment its own x/y was read (sampleTime), minus sessionT0 (not
-% at the top of the frame) so Time_ms is comparable across rows, across
+% at the moment its own x/y was read (sampleTime), minus sessionT0 -- not
+% at the top of the frame -- so Time_ms is comparable across rows, across
 % both engines' files, and against the console's live session clock.
 trajChunk = 200000;
 trajBuf   = zeros(trajChunk, 6);
 trajN     = 0;
 
 % sessionT0: GetSecs() the instant the first trial starts (set once, inside
-% the setOnce_Trial block below; setOnce_Trial starts true, so this fires
+% the setOnce_Trial block below -- setOnce_Trial starts true, so this fires
 % on the loop's very first iteration, before any trajBuf row is written).
 % lastSessionTimeUpdate throttles the console's live "Session time" box to
 % roughly once a second instead of every frame.
 sessionT0             = [];
 lastSessionTimeUpdate = 0;
 
-% sessionHoldT0: when the SESSION CLOCK starts; the first hold of the
+% sessionHoldT0: when the SESSION CLOCK starts -- the first hold of the
 % first trial (EP.HOLD_START below), the first moment the subject engaged.
 % Deliberately NOT sessionT0, which anchors the exported trajectory
 % timestamps and must stay at the start of trial 1, or every sample taken
@@ -475,11 +496,11 @@ lastSessionTimeUpdate = 0;
 % does not stop it, so that trial's time counts up to the next trial's hold.
 sessionHoldT0 = [];
 
-% Discard whatever the RZ2 relay queued while the rest of setup ran; above
+% Discard whatever the RZ2 relay queued while the rest of setup ran -- above
 % all the recording-link dialog, which holds here for as long as the
 % operator takes. Those samples predate the session; keeping them would both
 % stall the first frames working the backlog off AND anchor the trajectory
-% clock on a stale sample. Same call, same reasoning, as CenterOutTask.m;
+% clock on a stale sample. Same call, same reasoning, as CenterOutTask.m --
 % see FlushRZ2Joystick.m.
 if useRZ2
     nFlushed = FlushRZ2Joystick(rz2);
@@ -517,7 +538,7 @@ while exitFlag == 0
             trialIndex  = trialIndex + 1;
             stimAttempt = 1;
             % Re-jitter the hold-target's position only for a genuinely NEW
-            % trial; a retry (repeat_trial == 1 below) keeps the SAME
+            % trial -- a retry (repeat_trial == 1 below) keeps the SAME
             % spot, same rationale as the reach-target direction below
             % (there is only one hold-target here, so unlike the reach
             % target there is no elimination-by-retry concern; this just
@@ -526,7 +547,7 @@ while exitFlag == 0
             % Centre jitter is ONLY applied in pure hold mode. With reach
             % mode on, the peripheral target's position is already the
             % randomized element (see targetSeq below) and is defined
-            % relative to the hold-target; also jittering the hold-target
+            % relative to the hold-target -- also jittering the hold-target
             % itself would make BOTH move every trial, compounding the
             % randomization in a way that was not asked for. So the
             % hold-target stays pinned to the true screen centre whenever
@@ -562,13 +583,13 @@ while exitFlag == 0
         % --- Live status: where this trial sits in the whole session ------
         % Center-In has no blocks and no categories (every trial is the
         % same hold task), so unlike CenterOutTask there is nothing to
-        % break down further, but the operator still needs the plain
-        % "how far along are we" figure stated outright, rather than having
-        % to compare two boxes on the console by eye.
+        % break down further -- but the operator still needs the plain
+        % "how far along are we" figure the console could previously only
+        % be read for by comparing two boxes by eye.
         % Painted from the same helper the end-of-trial repaint uses, so the
         % two cannot describe the session differently.
         paintProgressStatus(orgParams.handles, trialIndex, stimAttempt, ...
-            maxStimAttempts, good_trials, maxCorrectTrials);
+            maxStimAttempts, good_trials, maxCorrectTrials, centerInModeLabel);
         drawnow();
 
         nextEpoch = EP.ENTER_CENTER;
@@ -586,9 +607,9 @@ while exitFlag == 0
     end
 
     % --- Read input device -> cursor position ---
-    [x, y] = ReadCursorPosition(taskWindow, inputSource, joy, rz2, xCenter, yCenter, screenXpixels, screenYpixels, pointer_offset);
+    [x, y] = ReadCursorPosition(taskWindow, inputSource, joy, rz2, xCenter, yCenter, screenXpixels, screenYpixels, pointer_offset, joyGain);
     % sampleTime: the instant THIS cursor sample was taken, and the only
-    % clock the base trajectory rows below are stamped with, NOT this_time
+    % clock the base trajectory rows below are stamped with -- NOT this_time
     % (captured at the top of the iteration, before the once-a-second
     % console set() above and before the read itself). Same convention as
     % the oversampled rows further down and as CenterOutTask.m, so a row's
@@ -603,10 +624,10 @@ while exitFlag == 0
 
     if useRZ2
         % 'rz2adc' is fed by JoystickRelayToTask.m's UDP stream (up to
-        % ~7500 pkts/s from Computer 1; see SetupRZ2Joystick.m/
+        % ~7500 pkts/s from Computer 1 -- see SetupRZ2Joystick.m/
         % ReadRZ2Joystick.m). Every sample it delivered since the last
         % frame gets its OWN trajectory row here instead of just one row
-        % per frame; the whole reason that relay exists is to preserve
+        % per frame -- the whole reason that relay exists is to preserve
         % the joystick's native sampling rate rather than cap it at the
         % screen's frame rate. The [x, y] ReadCursorPosition already read
         % above (for rendering/hit-testing) is the newest row of this
@@ -617,7 +638,7 @@ while exitFlag == 0
             trajBuf(end + max(trajChunk, nRz2), 6) = 0;
         end
         if isempty(rz2Batch)
-            % No new UDP sample arrived this frame (rare, only if the
+            % No new UDP sample arrived this frame (rare -- only if the
             % relay briefly stalls); log the cached last-known position
             % ReadCursorPosition just returned so trajN still advances
             % exactly once, same as every other input source.
@@ -632,7 +653,7 @@ while exitFlag == 0
                 % rz2.port.UserData.lastDrainTime (stamped when
                 % SetupRZ2Joystick.m opened the socket, BEFORE sessionT0
                 % exists), so the very first batch of the very first frame
-                % can legitimately compute a time just before sessionT0;
+                % can legitimately compute a time just before sessionT0 --
                 % clamp those rows to exactly 0 rather than letting the
                 % trajectory's first few rz2adc samples read negative.
                 rz2TimeMs = max((rz2Batch(bi, 1) - sessionT0) * 1000, 0);
@@ -668,7 +689,7 @@ while exitFlag == 0
 
     % --- Render ---
     if showCursor
-        % Fixed colour while visible (TARGET_GO or TARGET_HOLD); the
+        % Fixed colour while visible (TARGET_GO or TARGET_HOLD) -- the
         % gray-while-waiting/green-while-held convention is centre-circle
         % only (holdColor below); the peripheral target does not switch
         % colour on entry/hold.
@@ -683,12 +704,12 @@ while exitFlag == 0
         % Skipped entirely for 'rz2adc': the trajBuf block above already
         % logged every UDP sample the relay delivered this frame, which is
         % strictly more resolution than polling ReadCursorPosition a few
-        % more times here would add, doing both would just re-drain an
+        % more times here would add -- doing both would just re-drain an
         % already-drained socket and log duplicate cached values.
         if moveOversample > 0 && ~useRZ2
             for oi = 1:moveOversample
                 pause(moveOversampleDt);
-                [xOver, yOver] = ReadCursorPosition(taskWindow, inputSource, joy, rz2, xCenter, yCenter, screenXpixels, screenYpixels, pointer_offset);
+                [xOver, yOver] = ReadCursorPosition(taskWindow, inputSource, joy, rz2, xCenter, yCenter, screenXpixels, screenYpixels, pointer_offset, joyGain);
                 sampleTime = GetSecs();   % same convention as the base row above: stamp at this sample's own read
                 trajN = trajN + 1;
                 if trajN > size(trajBuf, 1)
@@ -772,7 +793,7 @@ while exitFlag == 0
                 % round to noticing. Note this also anchors the holdTime
                 % window itself a fraction of a millisecond later than
                 % before (trigTime is read after this_time within the same
-                % frame), far below the jitter already in holdTime.
+                % frame) -- far below the jitter already in holdTime.
                 t.centerHold = trigTime;
                 nextEpoch = EP.HOLD;
             end
@@ -781,7 +802,7 @@ while exitFlag == 0
             holdColor = green_c;
             if this_time > t.centerHold + holdTime && inCenterCircle
                 % The instant the hold requirement was MET, measured from
-                % the sample that met it; the other end of HoldAchieved_s
+                % the sample that met it -- the other end of HoldAchieved_s
                 % on trials that got this far. Always >= holdTime, by the
                 % frame of overshoot between the requirement expiring and
                 % the next sample confirming the cursor is still inside.
@@ -859,16 +880,13 @@ while exitFlag == 0
             end
 
         case EP.ERROR_FB
-            % Black/white screen flash on EVERY error, same 0.1 s
-            % alternation CenterOutTask.m uses (see its EP.ERROR_FB).
-            % It flashes on all three error types here rather than on one
-            % of them, because unlike Center-Out this task has no
-            % "picked the wrong thing" error to reserve it for: leaving the
-            % centre early, timing out on the reach and leaving the target
-            % early are all the same thing to the subject (the trial was
-            % failed) and in pure hold mode (no reach) the early exit is
-            % the ONLY error there is, so a flash reserved for anything
-            % else would never fire.
+            % Error handling for the failed-trial error types (1 early exit,
+            % 2 reach timeout, 3 left target early). Every Center-In error is a
+            % failure to complete the hold/reach, so ALL of them flash: there
+            % is no wrong-target ("picked the foil") case in Center-In to
+            % suppress the flash for -- that lives in the Center-Out
+            % pre-training instead. The white/black flash is the same 0.1 s
+            % alternation CenterOutTask.m uses.
             good_trial = 0;  repeat_trial = stimAttempt < maxStimAttempts;
             if ~t.marker
                 t.marker = GetSecs();
@@ -884,15 +902,13 @@ while exitFlag == 0
                 end
             end
             showCursor = 0;
-            % Alternate white/black every errorFlashPeriod seconds for as
-            % long as the error feedback lasts, so the flash looks the same
-            % whatever frame rate this rig runs at.
-            %
-            % Clamped at 0 because t.marker is stamped with GetSecs() a few
-            % microseconds AFTER this_time was captured at the top of this
-            % frame: on the entry frame the raw difference is slightly
-            % negative, which floor()/mod() would turn into a black first
-            % frame. The clamp makes the flash start on white every time.
+            % Alternate white/black every errorFlashPeriod seconds for as long
+            % as the error feedback lasts, so the flash looks the same whatever
+            % frame rate this rig runs at. Clamped at 0 because t.marker is
+            % stamped with GetSecs() a few microseconds AFTER this_time was
+            % captured at the top of this frame: on the entry frame the raw
+            % difference is slightly negative, which floor()/mod() would turn
+            % into a black first frame. The clamp makes the flash start white.
             flashElapsed = max(0, this_time - t.marker);
             if mod(floor(flashElapsed / errorFlashPeriod), 2) == 0
                 Screen('FillRect', taskWindow, white_c);
@@ -927,22 +943,22 @@ while exitFlag == 0
             % hold the subject actually produced, on the same clock as
             % trajectory_*.csv's Time_ms.
             %
-            % Deliberately NOT the nominal holdTime on correct trials: that
-            % would mix the requested hold into a column named "achieved"
-            % and hide the real overshoot, and it would score 0 for a
-            % reach-mode trial that held correctly and then missed the
-            % target; t.leaveCenter is only set on an early exit from the
-            % centre, so neither branch would match. t.holdSatisfied covers
-            % both: it is set exactly when the hold completed, regardless of
-            % what happened afterwards.
+            % This used to report the NOMINAL holdTime whenever good_trial
+            % was set, which mixed the requested hold into a column named
+            % "achieved" and silently under-reported the real overshoot. It
+            % also scored 0 for a reach-mode trial that held correctly and
+            % then missed the target -- t.leaveCenter is only set on an
+            % early exit from the centre, so neither branch matched. Keying
+            % on t.holdSatisfied fixes both: it is set exactly when the hold
+            % completed, regardless of what happened afterwards.
             %
-            % POOLING WARNING. Older session files carry the nominal value
-            % in this column on correct trials, so HoldAchieved_s is not
-            % comparable across the whole archive: those files read exactly
-            % HoldTimeRequired_s here, current ones read slightly more (the
-            % frame of overshoot). Check the session date before pooling.
-            % HoldTimeRequired_s is unaffected and always records what was
-            % asked for.
+            % POOLING WARNING. Sessions recorded before this change carry
+            % the nominal value in this column on correct trials, so
+            % HoldAchieved_s is not comparable across the change: old files
+            % read exactly HoldTimeRequired_s there, new ones read slightly
+            % more (the frame of overshoot). Check the session date before
+            % pooling. HoldTimeRequired_s is unaffected and still records
+            % what was asked for.
             if t.holdSatisfied > 0
                 holdAchieved = t.holdSatisfied - t.centerHold;
             elseif t.leaveCenter > 0
@@ -951,7 +967,7 @@ while exitFlag == 0
                 holdAchieved = 0;
             end
             if total_trials > numel(holdAchievedLog)
-                % Grow buffer; fill the new region with NaN explicitly:
+                % Grow buffer -- fill the new region with NaN explicitly:
                 % arr(end+N) = nan only sets the LAST new element to NaN,
                 % the gap in between defaults to 0, which would corrupt the
                 % isnan() filter in printCenterInSummary below.
@@ -977,13 +993,12 @@ while exitFlag == 0
             prevTrialCorrect = good_trial;
 
             % Repaint with the outcome of the trial that just CLOSED, not
-            % only at the start of the next one; the last trial of a
-            % session never gets a next one, so painting at trial start
-            % alone would leave the counter one trial short of 0 and the
-            % console would appear to jump straight to "Task done" (same
-            % reasoning as CenterOutTask.m).
+            % only at the start of the next one -- the last trial of a
+            % session never gets a next one, so the counter used to stop one
+            % trial short of 0 and the console appeared to jump straight to
+            % "Task done" (same fix as CenterOutTask.m).
             paintProgressStatus(orgParams.handles, trialIndex, stimAttempt, ...
-                maxStimAttempts, good_trials, maxCorrectTrials);
+                maxStimAttempts, good_trials, maxCorrectTrials, centerInModeLabel);
 
             % A failed hold costs the subject nothing but time: only rewarded
             % holds count towards the quota, so the session keeps going until
@@ -1000,7 +1015,7 @@ while exitFlag == 0
     % --- Pause handling ---
     % PauseLoop blocks until the operator resumes. Its return value is a
     % sentinel, NOT an epoch of this engine, so it is deliberately
-    % DISCARDED rather than assigned to nextEpoch, exactly as
+    % DISCARDED rather than assigned to nextEpoch -- exactly as
     % CenterOutTask.m does. Assigning it would set nextEpoch to a value no
     % case below matches, and since nothing else in the loop writes
     % nextEpoch, the state machine would sit in that unmatched state
@@ -1011,7 +1026,7 @@ while exitFlag == 0
         PauseLoop(taskWindow, black_c, orgParams, kbDevice, useKbQueue, KEY_SPACE);
         pauseTask = 0;
         % A pause blocks this loop for an unbounded time while the relay
-        % keeps streaming; same backlog problem as session start, so drop
+        % keeps streaming -- same backlog problem as session start, so drop
         % it the same way.
         if useRZ2
             FlushRZ2Joystick(rz2);
@@ -1031,7 +1046,7 @@ else
 end
 
 % Release the fullscreen Psychtoolbox window immediately once the quota is
-% met (or the session ends early), same rationale as CenterOutTask.m.
+% met (or the session ends early) -- same rationale as CenterOutTask.m.
 % ForceCloseScreen is idempotent; harmless no-op if CloseTask() below or the
 % onCleanup-registered call at the top already ran.
 ForceCloseScreen(taskWindow);
@@ -1043,11 +1058,11 @@ if total_trials > 0, perf = good_trials / total_trials * 100; else, perf = 0; en
 
 if total_trials == 0
     % Aborted before any trial ran. If the recording-link gate was declined,
-    % keep that message on screen (more informative than a generic one);
+    % keep that message on screen (more informative than a generic one) --
     % abortedByOperator is still false in that case, since it's set only by
     % the in-loop Abort/ESC handlers above, not the pre-loop gate.
     fprintf('No trials run; no session files written.\n');
-    % Water can still have been delivered with no completed trial; the
+    % Water can still have been delivered with no completed trial -- the
     % operator's 'r' key works from the very first frame (same reasoning as
     % CenterOutTask.m's copy of this guard).
     if rewardPulsesTask + rewardPulsesManual > 0
@@ -1066,7 +1081,7 @@ try
     % distinguishable from "instantaneous". Same field CenterOutTask.m saves.
     S.sessionSeconds = sessionSeconds;
     S.error_early_exit = error_early_exit;
-    % Water delivered; valve-open seconds plus the calibration used, so a
+    % Water delivered -- valve-open seconds plus the calibration used, so a
     % session can be converted to mL later even if the rig was calibrated
     % (or recalibrated) after the fact. Same fields CenterOutTask.m saves.
     S.rewardPulsesTask   = rewardPulsesTask;    S.rewardSecTask   = rewardSecTask;
@@ -1088,10 +1103,10 @@ try
     fprintf('\nSession data saved to:  %s\n', fullfile(outDir, ['perf_centerIn_' d '.mat']));
 
     % Exported via the shared SaveTrajectory helper (see SaveTrajectory.m),
-    % also used by CenterOutTask.m, so the export/crash-recovery logic
-    % exists once rather than once per engine. 'centerIn_<d>' as the run tag
-    % is what produces the trajectory_centerIn_*.{mat,csv} filenames this
-    % engine's sessions are archived under. No movement-only cut is written (that is
+    % also used by CenterOutTask.m -- the same export/crash-recovery logic
+    % no longer needs its own copy in each engine. 'centerIn_<d>' as the
+    % run tag keeps the exact same trajectory_centerIn_*.{mat,csv} filenames
+    % this produced before. No movement-only cut is written (that is
     % SaveMovementTrajectory.m's job, and this engine has no MOVEMENT epoch
     % to filter on).
     SaveTrajectory(trajBuf, trajN, outDir, ['centerIn_' d], sessionDate);
@@ -1137,12 +1152,12 @@ if ~isempty(uSynapse)
     fclose(uSynapse);
 end
 CleanupRZ2Joystick(rz2);   % release port 8831, or the next rz2adc run fails to rebind it
-% Audible end-of-session alert, LAST, same reasoning and same tones as
+% Audible end-of-session alert, LAST -- same reasoning and same tones as
 % CenterOutTask.m (see AlertTaskDone.m).
 if abortedByOperator
-    AlertTaskDone('stopped', OrgGet(orgParams, 'alertOnFinish', true));
+    AlertTaskDone('stopped', OrgGet(orgParams, 'alertOnFinish', true), OrgGet(orgParams, 'alertAudioDevice', []));
 else
-    AlertTaskDone('done', OrgGet(orgParams, 'alertOnFinish', true));
+    AlertTaskDone('done', OrgGet(orgParams, 'alertOnFinish', true), OrgGet(orgParams, 'alertAudioDevice', []));
 end
 close(orgParams.handles.dlgTrainingMain);
 
@@ -1150,7 +1165,7 @@ catch ME
     disp(ME.identifier);  disp(ME.message);
     if ~isempty(ME.stack), disp(ME.stack(1)); end
     if numel(ME.stack) > 1, disp(ME.stack(2)); end
-    % Salvage the in-memory trajectory buffer on a hard crash, same
+    % Salvage the in-memory trajectory buffer on a hard crash -- same
     % rationale as CenterOutTask.m's top-level catch block.
     if exist('trajBuf', 'var') && exist('trajN', 'var') && trajN > 0 ...
             && exist('outDir', 'var') && exist('d', 'var')
@@ -1171,7 +1186,7 @@ catch ME
         fclose(uSynapse);
     end
     if exist('rz2', 'var'), try, CleanupRZ2Joystick(rz2); catch, end, end
-    AlertTaskDone('error', OrgGet(orgParams, 'alertOnFinish', true));   % distinct "it crashed" tone
+    AlertTaskDone('error', OrgGet(orgParams, 'alertOnFinish', true), OrgGet(orgParams, 'alertAudioDevice', []));   % distinct "it crashed" tone
     try, close(orgParams.handles.dlgTrainingMain); catch, end
 end
 end % CenterInTask
@@ -1188,7 +1203,7 @@ end
 
 function printCenterInSummary(total_trials, good_trials, perf, error_early_exit, holdAchieved)
 % PRINTCENTERINSUMMARY  End-of-session report: no blocks/categories to
-% break out (unlike CenterOutTask.m's 2-level report); every trial
+% break out (unlike CenterOutTask.m's 2-level report) -- every trial
 % is the same task, so one flat summary is all there is.
 fprintf('\n======= CENTER-IN SESSION SUMMARY ==========\n');
 fprintf('Total Trials:        %d\n', total_trials);
@@ -1204,12 +1219,13 @@ fprintf('=============================================\n\n');
 end
 
 function paintProgressStatus(handles, trialIndex, stimAttempt, maxStimAttempts, ...
-        goodTrials, maxCorrectTrials)
-% Console Status line. Called twice per trial (as the trial opens and as
-% it closes) so the wording lives here instead of at either call site.
+        goodTrials, maxCorrectTrials, modeLabel)
+% Console Status line AND progress-breakdown box. Called twice per trial --
+% as the trial opens and as it closes -- so the wording lives here instead of
+% at either call site.
 %
 % Center-In has no blocks and no categories (every trial is the same hold
-% task), so unlike CenterOutTask there is nothing to break down further,
+% task), so unlike CenterOutTask there is nothing to break down further --
 % but the operator still needs the plain "how far along are we" figure the
 % console could previously only be read for by comparing two boxes by eye.
 %
@@ -1226,6 +1242,22 @@ set(handles.text77, 'String', sprintf( ...
     trialIndex, retryStr, goodTrials, maxCorrectTrials, ...
     max(0, maxCorrectTrials - goodTrials)));
 set(handles.text77, 'ForegroundColor', 'blue');
+
+% Progress-breakdown box: the Center-Out per-block/category breakdown does
+% not apply here, so instead of leaving it blank, label this as a Center-In
+% run and show its own correct-holds progress. Optional handle (a hand-built
+% handles struct may not have it), and modeLabel is optional for older
+% callers, so both are guarded.
+if nargin >= 7 && isfield(handles, 'textBreakdown')
+    set(handles.textBreakdown, 'String', sprintf( ...
+        ['Center-In (%s)\n' ...
+         'Correct holds: %d / %d\n' ...
+         '%d left\n' ...
+         'Trial: %d%s'], ...
+        modeLabel, goodTrials, maxCorrectTrials, ...
+        max(0, maxCorrectTrials - goodTrials), trialIndex, retryStr));
+    set(handles.textBreakdown, 'ForegroundColor', [0 0 0.5]);
+end
 end
 
 function printCenterInDirMatrix(dirsDeg, totalPerDir, correctPerDir, ...
@@ -1236,7 +1268,7 @@ function printCenterInDirMatrix(dirsDeg, totalPerDir, correctPerDir, ...
 %   %_shown vs %_assigned distinction here: a direction is only ever counted
 %   once its target has actually appeared (drawn from targetSeq right when
 %   EP.HOLD hands off to EP.TARGET_GO), so there is no "assigned but never
-%   shown" case to separate out; an early exit during the CENTRE hold
+%   shown" case to separate out -- an early exit during the CENTRE hold
 %   happens before any direction is drawn at all, and is already excluded
 %   from these tallies entirely (it shows up only in error_early_exit,
 %   printed separately by printCenterInSummary above).

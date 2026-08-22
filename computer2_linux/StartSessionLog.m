@@ -1,16 +1,17 @@
 function restoreLog = StartSessionLog(logFile, engineName, runTag)
 % STARTSESSIONLOG  Mirror everything a session prints to the console into a
 % .txt file, for as long as the returned object is alive.
+%   Paola Castillo 2026-07-31
 %
 %   Used by CenterOutTask.m and CenterInTask.m so that every session leaves a
-%   readable transcript next to its data files; the budget block, any
+%   readable transcript next to its data files -- the budget block, any
 %   requeue/warning notices during the run, and the whole end-of-session
 %   report (SessionReport.blocks/session/reward/confusion/signalDetection)
 %   without the operator having to scroll back through the MATLAB console or
 %   remember to copy it out.
 %
-%   WHY DIARY, NOT evalc. The obvious alternative (wrap each report call in
-%   evalc and write the captured string) loses everything a section printed
+%   WHY DIARY, NOT evalc. The obvious alternative -- wrap each report call in
+%   evalc and write the captured string -- loses everything a section printed
 %   if that section then errors, in the console AND in the file, because
 %   evalc discards its buffer when it throws. Those are exactly the sessions
 %   whose partial output matters most. diary writes through as it goes, so a
@@ -19,7 +20,7 @@ function restoreLog = StartSessionLog(logFile, engineName, runTag)
 %
 %   The returned onCleanup restores whatever diary state the caller's MATLAB
 %   was in beforehand (including a diary the operator had running on their
-%   own file), and does so on EVERY exit path, normal return, error, or
+%   own file), and does so on EVERY exit path -- normal return, error, or
 %   Ctrl+C. Keep it in a variable that lives as long as logging should:
 %
 %     logCleanup = StartSessionLog(f, 'CenterOutTask', runTag);   %#ok<NASGU>
@@ -69,7 +70,7 @@ if ~isempty(prevFile)
     catch
         % A previous diary file that can no longer be opened (deleted, or on
         % an unmounted drive) must not turn a finished session into an
-        % error; the session's own log is already written and closed.
+        % error -- the session's own log is already written and closed.
         diary('off');
     end
 end

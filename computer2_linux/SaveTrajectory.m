@@ -1,17 +1,18 @@
 function SaveTrajectory(trajBuf, trajN, outDir, runTag, sessionDate, saveAsMat, saveCsv)
     % SAVETRAJECTORY  Full multi-epoch trajectory export (normal and crash-recovery).
+    %   Paola Castillo 2026-07-31
     %
-    %   The single trajectory-saving path for all four call sites (normal
-    %   export and crash-recovery, in each of the two task engines). Writes
-    %   the WHOLE buffer: every epoch, not just MOVEMENT.
+    %   Consolidates the identical trajectory-saving logic that used to appear
+    %   four times (normal export and crash-recovery, in each of the two task
+    %   engines). Writes the WHOLE buffer: every epoch, not just MOVEMENT.
     %
-    %   The movement-only cut is a separate export, SaveMovementTrajectory.m,
-    %   called by the task alongside this one, so the two are independent: a
-    %   caller can write the full trajectory without the movement cut, write
-    %   the movement cut without the full trajectory, or reorder them, and
-    %   neither silently depends on the other's intermediate state. Both take
-    %   the SAME inputs (trajBuf, trajN, outDir, runTag, sessionDate), so they
-    %   are drop-in peers.
+    %   This function no longer writes the movement-only cut. That export is
+    %   now SaveMovementTrajectory.m, called separately by the task alongside
+    %   this one, so the two are independent: a caller can write the full
+    %   trajectory without the movement cut, write the movement cut without
+    %   the full trajectory, or reorder them, and neither silently depends on
+    %   the other's intermediate state. Both take the SAME inputs (trajBuf,
+    %   trajN, outDir, runTag, sessionDate), so they are drop-in peers.
     %
     %   INPUT
     %     trajBuf      : raw trajectory buffer. Two layouts are supported,
@@ -19,7 +20,7 @@ function SaveTrajectory(trajBuf, trajN, outDir, runTag, sessionDate, saveAsMat, 
     %                      CenterOutTask.m (N x 8): TrialNum, Time, X, Y,
     %                        Epoch, Block, TrialNumInBlock, Attempt
     %                      CenterInTask.m     (N x 6): TrialNum, Time, X, Y,
-    %                        Epoch, Attempt (no Block/TrialNumInBlock; there
+    %                        Epoch, Attempt (no Block/TrialNumInBlock -- there
     %                        is no length/position grid to split on)
     %     trajN        : number of valid rows in trajBuf
     %     outDir       : output directory (created if missing)

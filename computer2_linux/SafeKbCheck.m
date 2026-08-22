@@ -1,5 +1,6 @@
 function [kd, kc] = SafeKbCheck(dev, useQueue)
 % SAFEKBCHECK  Robust keyboard poll for Psychtoolbox.
+%   Paola Castillo 2026-07-31
 %
 %   Prefers KbQueueCheck (independent of KbCheck's OS-detection) when a queue
 %   was created. Otherwise falls back to KbCheck. On OSes that the installed

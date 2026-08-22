@@ -123,7 +123,7 @@ EP.BAR           = TaskEpoch.BAR;           % bar visible, then (optional stim->
 EP.STIM_DELAY    = TaskEpoch.STIM_DELAY;    % optional working-memory delay between bar and cue
 EP.CUE           = TaskEpoch.CUE;           % selection cue visible, then place targets
 EP.CUE_DELAY     = TaskEpoch.CUE_DELAY;     % optional delay between cue and targets
-EP.REACTION      = TaskEpoch.REACTION;      % wait for cursor to leave the centre
+EP.DECISION_TIME      = TaskEpoch.DECISION_TIME;      % wait for cursor to leave the centre
 EP.MOVEMENT      = TaskEpoch.MOVEMENT;      % wait for cursor to reach a target
 EP.TARGET_HOLD   = TaskEpoch.TARGET_HOLD;   % brief hold inside the correct target
 EP.REWARD        = TaskEpoch.REWARD;        % deliver reward
@@ -131,6 +131,35 @@ EP.SUCCESS_FB    = TaskEpoch.SUCCESS_FB;    % success feedback
 EP.ERROR_FB      = TaskEpoch.ERROR_FB;      % error feedback (flash on wrong target)
 EP.ITI           = TaskEpoch.ITI;           % inter-trial interval
 EP.BOOKKEEP      = TaskEpoch.BOOKKEEP;      % update GUI, log the trial, arm the next one
+
+% Epoch set the movement kinematics differentiate over. Changed from
+% MOVEMENT-only to DECISION_TIME+MOVEMENT: PeakVelocity_cmPerS,
+% MeanVelocity_cmPerS, PeakAcceleration_cmPerS2 (TrialKinematics.m) and the
+% exported trajectory_movement_<runTag>.csv (SaveMovementTrajectory.m) now
+% both include the DECISION_TIME epoch (target-onset -> leave-center) alongside
+% MOVEMENT (leave-center -> reach-target), driven from this ONE list so the
+% two stay in sync (SaveMovementTrajectory.m's own header comment promises
+% its rows are "exactly the rows TrialKinematics.m differentiates").
+%
+% CONSEQUENCE, stated plainly: DECISION_TIME is mostly the subject sitting
+% almost-still inside the centre window deciding/waiting to depart (up to
+% targetDuration, 5 s by default), not moving. Folding it in means
+% MeanVelocity_cmPerS is NO LONGER a pure "reach speed" figure -- it now
+% also depends on how long the subject took to leave the centre, which is
+% decision time, not movement time. Two trials with identical reaches but
+% different reaction times will report different MeanVelocity_cmPerS under
+% this definition. PeakVelocity/PeakAcceleration are less affected in
+% principle (the true peak should still fall inside the reach), but are not
+% immune either if centre-hold jitter during a long DECISION_TIME happens to
+% produce a bigger single-sample excursion than the reach itself on a noisy
+% trial. Placed here (right after EP, before the try block) rather than
+% deeper in SETUP so it is defined whenever EP is, including on the
+% crash-recovery salvage path further down.
+% TARGET_HOLD (the brief hold inside the correct target after MOVEMENT) is
+% included too, so the movement-only export and the differentiated kinematics
+% cover reaction + reach + the settle/hold inside the target, not just up to
+% first target contact.
+kinematicsEpochs = [EP.DECISION_TIME.Value, EP.MOVEMENT.Value, EP.TARGET_HOLD.Value];
 
 % --- Network endpoints (reward / event markers over UDP to Synapse) ------
 remoteHost = OrgGet(orgParams, 'remoteSynapseHost', '172.24.60.152');
@@ -164,11 +193,19 @@ if isfield(orgParams, 'runTag') && ~isempty(orgParams.runTag)
 end
 sessionDate = datestr(now, 'dd-mm-yyyy');   % logged per-row in the trial CSV
 
-% --- Output folder: all session results go to outputs/<yyyy-mm>/ ----------
-% Auto-created; keeps results out of the code folder and grouped by month
-% (e.g. outputs/2026-06/). Anchored to the current working directory.
+% --- Output folder: outputs/<yyyy-mm>/<yyyy-mm-dd>/<runTag>/ --------------
+% Auto-created; keeps results out of the code folder, grouped by month, then
+% by session day, then by SESSION (each run gets its own folder named by the
+% runTag, which includes the start hour -- e.g.
+% outputs/2026-06/2026-06-14/sess01_14-Jun-2026_09-31/). Anchored to the
+% current working directory. mkdir creates every intermediate folder. The
+% day/hour are taken from the session start, so a run that crosses midnight
+% stays in the folder it began in. The session folder is the shared runTag
+% `d`, so the task, the console's params snapshot, and every output file of
+% one run all land together (the console builds outDir the same way).
 outMonth = datestr(now, 'yyyy-mm');
-outDir   = fullfile('outputs', outMonth);
+outDay   = datestr(now, 'yyyy-mm-dd');
+outDir   = fullfile('outputs', outMonth, outDay, d);
 if ~exist(outDir, 'dir'), mkdir(outDir); end
 
 % --- Console transcript -> session_report_<runTag>.txt --------------------
@@ -222,7 +259,16 @@ cueYOffset  = OrgGet(orgParams, 'cueYOffset',  -220);  % cue vertical offset fro
 cueSize     = OrgGet(orgParams, 'cueSize',     125);   % cue dot diameter (px)
 cueDistance = OrgGet(orgParams, 'cueDistance', 220);   % horizontal spacing between cue dots (px)
 
-targetDuration = OrgGet(orgParams, 'targetDuration', 5);    % max time targets stay up waiting for a choice
+targetDuration = OrgGet(orgParams, 'targetDuration', 5);    % legacy combined window (fallback for the two split limits below)
+% Two SEPARATE reach deadlines (console-editable), replacing the single
+% targetDuration window. Each falls back to targetDuration when not set, so an
+% older caller that only sets targetDuration keeps a 5 s window for each phase.
+%   maxDecisionTime  : from target onset to LEAVING the centre (bounds the
+%                      DECISION_TIME epoch; never departing in time = timeout).
+%   maxExecutionTime : from leaving the centre to REACHING the correct target
+%                      (bounds the MOVEMENT epoch; not arriving in time = timeout).
+maxDecisionTime  = OrgGet(orgParams, 'maxDecisionTime',  OrgGet(orgParams, 'targetDuration', 2));
+maxExecutionTime = OrgGet(orgParams, 'maxExecutionTime', OrgGet(orgParams, 'targetDuration', 2.5));
 tarHoldFeed    = OrgGet(orgParams, 'tarHoldFeed',    0.2);  % success feedback duration
 tarErrorFeed   = OrgGet(orgParams, 'tarErrorFeed',   0.2);  % error feedback duration
 ITI            = OrgGet(orgParams, 'ITI',       2);    % base inter-trial interval (successful trials)
@@ -232,7 +278,13 @@ ITI_error      = OrgGet(orgParams, 'ITIError',  3);    % inter-trial interval af
 % reward control sets, so changing "Reward" in the GUI affects the real
 % per-trial reward, not just the manual-reward key.
 rewTime        = OrgGet(orgParams, 'Reward', 0.15);
-minTarHoldTime = OrgGet(orgParams, 'minTarHoldTime', 0);    % required hold inside the target before reward
+minTarHoldTime = OrgGet(orgParams, 'minTarHoldTime', 0.05);    % required hold inside the target before it counts as good (s)
+% Hold strictness (console "Strict hold"). false (default): lenient -- leaving
+% the target resets the hold timer and the subject may return and still earn
+% reward by holding minTarHoldTime. true: any exit from the target before
+% completing the hold aborts the trial (error_type = 1, no reward). See
+% EP.TARGET_HOLD.
+strictHold = logical(OrgGet(orgParams, 'strictHold', false));
 
 % --- Stimulus set: bar lengths (visual angle -> pixels) -------------------
 % The table itself, the reduced 3-length sets and the bar subset all live in
@@ -286,6 +338,12 @@ barOffsetY_default = OrgGet(orgParams, 'barOffsetY', -150);
 % Pair with the bar subset above to drill a single colour first (e.g. '1'
 % for Short only), then widen the selection as the subject improves.
 trainingPhase = OrgGet(orgParams, 'trainingPhase', 0);
+% Error flash policy (console "Show error flash", pre-training). A failed
+% hold/reach (error_type 1, an early exit / not completing) ALWAYS flashes;
+% the wrong-target pick (error_type 2, the phase-2 foil) flashes only when
+% this is on. Off by default: the foil pick then just resolves without a
+% flash. See EP.ERROR_FB below.
+showErrorFlash = logical(OrgGet(orgParams, 'showErrorFlash', false));
 if ~ismember(trainingPhase, [0 1 2])
     error('CenterOutTask:badTrainingPhase', ...
         'orgParams.trainingPhase must be 0 (off), 1 or 2; got %s.', num2str(trainingPhase));
@@ -309,6 +367,30 @@ if trainingPhase > 0
         fprintf(['Training phase 2: matching target + one foil in another category ' ...
             'colour (error flash on a foil pick). Bar drawn at full colour, cue dots off.\n']);
     end
+end
+
+% --- Foil-forgiving training (foilNoAbort) -------------------------------
+% Cuando esta activo, tocar un target DISTRACTOR (foil) durante el
+% movimiento NO aborta el ensayo ni cuenta como error: el ensayo sigue
+% corriendo (permanece en EP.MOVEMENT) hasta que el sujeto alcanza el
+% target CORRECTO, o hasta que expira targetDuration (entonces se cierra
+% como timeout / early-exit, error_type = 1).
+%
+% Se aplica SOLO en fases de entrenamiento (trainingPhase > 0). En la tarea
+% de categorizacion propiamente dicha (trainingPhase == 0) elegir el target
+% equivocado ES la respuesta del ensayo, de modo que ahi el foil SIEMPRE
+% penaliza, sin importar este flag (si no, no habria tarea que resolver).
+%
+% Default = 1 (indulgente en entrenamiento). Pon foilNoAbort = 0 para
+% restaurar la conducta previa (un foil en fase 2 = wrong-target error con
+% su flash de error habitual). No requiere cambios en la consola: si el GUI
+% no envia el campo, se usa este default via OrgGet.
+foilNoAbort  = logical(OrgGet(orgParams, 'foilNoAbort', 1));
+forgiveFoils = foilNoAbort && (trainingPhase > 0);
+if forgiveFoils
+    fprintf(['Foil-forgiving ON: los distractores NO abortan el ensayo; el sujeto ' ...
+        'puede seguir hasta el target correcto (limite de movimiento: maxExecutionTime = %.2fs).\n'], ...
+        maxExecutionTime);
 end
 
 % --- Colours -------------------------------------------------------------
@@ -449,6 +531,13 @@ trial_sequence_index = 0;   % advances on every attempt; indexes the sequence
 error_early_exit = 0;       % left centre too early
 error_wrong_target = 0;     % selected the wrong target
 
+% Diagnostico de foils indulgentes (NO penalizan; solo se cuentan por
+% flanco de entrada, no por frame). Utiles para ver cuanto tantea el
+% sujeto los distractores antes de acertar durante el entrenamiento.
+foilTouches     = 0;        % total de entradas a un foil en toda la sesion
+foilTouches_grp = zeros(1, 3);
+wasInFoil       = 0;        % estado previo (deteccion de flanco en EP.MOVEMENT)
+
 % Previous-row values for the CSV's PrevTrialCorrect/PrevTrialDirection
 % columns (sequential-effects covariates). No previous trial yet for row 1.
 blockSize          = numLengths * 4;   % every length x 4 rotating positions (48 for full12, 12 for prototypes3)
@@ -552,9 +641,20 @@ blockStats     = repmat(blockStatsTemplate, 1, max(1, ceil(maxAttempts / blockSi
 numBlocksUsed  = 0;
 
 % --- Trial-by-trial CSV (append mode: safe even if the task crashes) -----
+% Split into TWO files, as of this version. trial_data_<runTag>.csv keeps
+% every behavioural/timing column exactly as before, MINUS the four
+% kinematics columns (PeakVelocity_cmPerS, MeanVelocity_cmPerS,
+% PeakAcceleration_cmPerS2, NumMovementSamples), which now go to their OWN
+% file, trial_kinematics_<runTag>.csv. Both files are written from the SAME
+% BOOKKEEP write below (one trial, one row in each), and share
+% Date,Block,TrialNumInBlock,Attempt, which is the SAME Block+
+% TrialNumInBlock+Attempt key SaveMovementTrajectory.m's header comment
+% already uses to match trajectory rows against trial_data_*.csv, so a
+% kinematics row can always be rejoined onto its trial_data row (and onto
+% its trajectory rows) via that key.
 colorNames_log     = ColorCategoryMap.categoryCSVNames();
 directionNames_log = {'Right_0', 'Up_90', 'Left_180', 'Down_270'};
-trialLogFile = fullfile(outDir, ['trial_data_' d '.csv']);
+trialLogFile      = fullfile(outDir, ['trial_data_' d '.csv']);
 fid_log = fopen(trialLogFile, 'w');
 % PlannedDirection = the ORIGINALLY planned position for this sequence
 % slot (trialPositions, fixed by BuildTrialSequence; same value good_trials_lenpos
@@ -564,6 +664,35 @@ fid_log = fopen(trialLogFile, 'w');
 % down); the two only differ for a trial that needed a retry, and only
 % this per-attempt CSV (not the printed console report) records both side
 % by side, so a retry's actual vs. planned position is fully auditable here.
+fprintf(fid_log, ['Date,Block,TrialNumInBlock,StimulusGroup,BarSizeVA_deg,DecisionTime_s,' ...
+                'ExecutionTime_s,TotalTime_s,IsCorrect,ErrorType,DirectionChosen,DirectionCorrect,' ...
+                'PlannedDirection,ChosenTarget,PrevTrialCorrect,PrevTrialDirection,Attempt\n']);
+fclose(fid_log);
+fprintf('Trial log file created:      %s\n', trialLogFile);
+
+% --- Per-foil-entry log (pre-training foil-forgiving only) ----------------
+% One row PER FOIL ENTRY (not per trial): every time the subject enters a
+% distractor during a forgiving pre-training trial (see EP.MOVEMENT), a row
+% is appended here. The trial itself does not abort and its single row still
+% goes to trial_data above; this companion file records each individual
+% wrong-target touch that trial_data cannot (it is one-row-per-trial). Joins
+% back to trial_data on Block+TrialNumInBlock+Attempt. Buffered in memory and
+% flushed once per trial in BOOKKEEP, so it never does disk I/O inside the
+% real-time tracking loop. Only ever written when forgiveFoils is on.
+foilEventsLogFile = fullfile(outDir, ['foil_events_' d '.csv']);
+if forgiveFoils
+    fid_foil = fopen(foilEventsLogFile, 'w');
+    fprintf(fid_foil, ['Date,Block,TrialNumInBlock,Attempt,StimulusGroup,BarSizeVA_deg,' ...
+                    'CorrectDirection,FoilDirection,FoilColor,TimeSinceTargetOnset_s\n']);
+    fclose(fid_foil);
+    fprintf('Foil-events log file created: %s\n', foilEventsLogFile);
+end
+% In-memory buffer of foil entries not yet flushed to disk. Columns:
+% [block, trialInBlock, attempt, trueGroup, foilColorRow, correctDir, foilDir,
+%  barIdx, timeSinceOnset_s]. Grown on demand; flushed in EP.BOOKKEEP.
+foilEventBuf   = zeros(0, 9);
+nFoilPending   = 0;   % rows in foilEventBuf waiting to be written this trial
+
 % KINEMATICS UNITS: cm/s and cm/s^2 ONLY. Logging the same three
 % measurements in px/s, deg VA/s and cm/s would be nine columns of which six
 % are a fixed scalar multiple of the other three; perfectly collinear, and
@@ -578,12 +707,8 @@ fid_log = fopen(trialLogFile, 'w');
 % columns are NaN because that count was too low to resolve a peak
 % (kinematicsMinMoveSamples), which is what makes such a row explainable
 % from this file alone rather than just unexplained-missing.
-fprintf(fid_log, ['Date,Block,TrialNumInBlock,StimulusGroup,BarSizeVA_deg,DecisionTime_s,' ...
-                'ReactionTime_s,TotalTime_s,IsCorrect,ErrorType,DirectionChosen,DirectionCorrect,' ...
-                'PlannedDirection,ChosenTarget,PrevTrialCorrect,PrevTrialDirection,Attempt,' ...
-                'PeakVelocity_cmPerS,MeanVelocity_cmPerS,PeakAcceleration_cmPerS2,NumMovementSamples\n']);
-fclose(fid_log);
-fprintf('Trial log file created: %s\n', trialLogFile);
+% Per-trial kinematics file is no longer produced (TrialKinematics is not
+% called; see BOOKKEEP). The full trajectory export keeps every epoch/sample.
 
 % --- Session mode: how many categories per trial -------------------------
 % '3cat'        : every trial is Short/Mid/Long (3 targets)        [default]
@@ -623,6 +748,18 @@ if oneLengthPerCategory && ~strcmpi(sessionMode, '3cat')
         '''%s'' has no 2-category split to make. Running as ''3cat''.\n'], ...
         stimulusSet, sessionMode);
     sessionMode = '3cat';
+end
+% prototypes2 is a 2-category set by construction (one Short bar and one Long
+% bar, Mid dropped -- see ConfigBarLengths.m). It has no 3-category framing to
+% offer, so it locks to '2cat' the same way the one-length-per-category sets
+% above lock to '3cat'. Left as a separate guard rather than folded into the
+% test above because its categorySet is [1 3], not 1:numCategories, so
+% oneLengthPerCategory is deliberately false for it.
+if strcmpi(stimulusSet, 'prototypes2') && ~strcmpi(sessionMode, '2cat')
+    fprintf(['NOTE: stimulus set ''prototypes2'' is a 2-category (Short/Long) set, so ' ...
+        'sessionMode ''%s'' has no 3-category split to make. Running as ''2cat''.\n'], ...
+        sessionMode);
+    sessionMode = '2cat';
 end
 blockLenCats = blockSize;   % one full block (see blockSize above) per category-count segment
 % Note: the per-(length,position) stop quota (good_trials_lenpos /
@@ -803,6 +940,7 @@ Screen('BlendFunction', taskWindow, 'GL_SRC_ALPHA', 'GL_ONE_MINUS_SRC_ALPHA');
 
 pointerRad     = 15;
 pointer_offset = -220;
+joyGain = OrgGet(orgParams, 'joyGain', -1.3);   % USB 'joystick' axis gain (console-editable); rz2adc/mouse unaffected
 FixPoint = [-15 15 0 0; 0 0 -15 15];
 [xCenter, yCenter] = RectCenter(windowRect);
 % Same OrgGet-with-fallback pattern used for timing and the other geometry
@@ -821,8 +959,8 @@ centerRad          = OrgGet(orgParams, 'centerRad', 200);   % centre-window diam
 % centerRad's own default, so a session that doesn't touch this field
 % renders targets at exactly the centre-window size, which is what
 % Targets4Dir below produces when it reuses centerCircle's dimensions.
-targetRad          = OrgGet(orgParams, 'targetRad', 200);    % peripheral target diameter (px)
-centerToTargetDist = OrgGet(orgParams, 'centerToTargetDist', 200);
+targetRad          = OrgGet(orgParams, 'targetRad', 180);    % peripheral target diameter (px)
+centerToTargetDist = OrgGet(orgParams, 'centerToTargetDist', 320);
 centerToTarget = centerToTargetDist * 1.27;
 targetRadius   = centerToTarget;
 circleSize     = [0 0 centerRad centerRad];
@@ -1068,11 +1206,17 @@ tarPos    = {[0 0 0 0], [0 0 0 0], [0 0 0 0]};
 tarColor  = {orange_c, green_c, blue_c};
 inTarget  = [0 0 0];
 BarOn = 0; showCue = 0; showCursor = 1; updatePointer = 1;
-% Same gray-while-waiting / green-while-holding convention as
-% CenterInTask.m's holdColor: gray until the cursor is confirmed inside the
-% centre and the hold timer actually starts (EP.HOLD), green from then on
-% through BAR/CUE/etc. (see the ENTER_CENTER and HOLD cases below).
-centerHoldColor = gray_c;
+% Gray-while-waiting / green-while-holding convention, console-configurable
+% (checkbox "Gray until holding", orgParams.useHoldColorEffect, default on --
+% same field and default as CenterInTask.m). On: gray until the cursor is
+% confirmed inside the centre and the hold timer starts (EP.HOLD), green from
+% then on. Off: the ring is always green (centerWaitColor = green_c).
+useHoldColorEffect = logical(OrgGet(orgParams, 'useHoldColorEffect', true));
+centerWaitColor = green_c;
+if useHoldColorEffect
+    centerWaitColor = gray_c;
+end
+centerHoldColor = centerWaitColor;
 currentColor     = orange_c;
 currentBarWidth  = allBarSizes(1);
 currentBarHeight = barHeight_default;
@@ -1162,6 +1306,13 @@ if useRZ2
     end
 end
 
+% Transient foil flash (pre-training only): when a foil is entered and the
+% "Show error flash" checkbox is on, the screen flashes white/black until
+% this time WITHOUT aborting the trial (see the Render block and EP.MOVEMENT).
+% 0 = no flash pending. foilFlashStart anchors the white/black alternation.
+foilFlashUntil = 0;
+foilFlashStart = 0;
+
 while exitFlag == 0
 
     if setOnce_Trial
@@ -1185,8 +1336,9 @@ while exitFlag == 0
         showCursor = 1;  showCue = 0;
         targetOn = [0 0 0];  BarOn = 0;
         awaitTargetOnset = 0;   % no targets pending at the start of a trial
-        centerHoldColor = gray_c;
+        centerHoldColor = centerWaitColor;
         good_trial = 0;  error_type = 0;
+        wasInFoil = 0;   % reinicia la deteccion de flanco de foils del ensayo
         current_trial_color = 0;  current_trial_direction = 0;
         chosen_target_color = -1;
         chosen_target_direction = 0;   % 0 = no target entered yet (e.g. early exit)
@@ -1195,20 +1347,19 @@ while exitFlag == 0
         % -- a superseded generation, not a file in this repo; the name is
         % kept because sessions recorded under it are still on disk). Two of
         % the three carry different NAMES here:
-        %   decisionTime = target-onset  -> leave-center   (was decisionTime)
-        %   reactionTime = leave-center  -> reach-target   (was executionTime)
-        %   totalTime    = decisionTime + reactionTime     (was reactionTime)
+        %   decisionTime  = target-onset -> leave-center
+        %   executionTime = leave-center -> reach-target   (renamed from reactionTime)
+        %   totalTime     = decisionTime + executionTime
         %
         % POOLING WARNING for anyone combining sessions. v2_2-era files wrote
-        % the TOTAL into a column called ReactionTime. Here that name means
-        % the leave-center -> reach-target interval instead, so ReactionTime_s
-        % does NOT mean the same thing in v2_2-era and current files, even
-        % though the column sits in the same position. Old ReactionTime ==
-        % current TotalTime_s; current ReactionTime_s is what those files
-        % called ExecutionTime. Check the
-        % header (or the session date) before pooling; the values are
-        % silently incompatible, not obviously wrong.
-        decisionTime = NaN; reactionTime = NaN; totalTime = NaN;
+        % the TOTAL (decision + execution) into a column called ReactionTime,
+        % and wrote the leave-center -> reach-target interval into a column
+        % called ExecutionTime. Current files therefore AGREE with v2_2 on
+        % ExecutionTime_s (same meaning), but there is no ReactionTime column
+        % anymore: what v2_2 called ReactionTime is current TotalTime_s. Check
+        % the header (or the session date) before pooling a v2_2 file -- its
+        % ReactionTime is a total, not an execution time.
+        decisionTime = NaN; executionTime = NaN; totalTime = NaN;
         current_ITI = ITI + (rand() * 2 - 1) * ITI_delta;
         holdTime = holdTime_min + rand() * (holdTime_max - holdTime_min);
         if repeat_trial == 0
@@ -1301,7 +1452,7 @@ while exitFlag == 0
     end
 
     % --- Read input device -> cursor position ---
-    [x, y] = ReadCursorPosition(taskWindow, inputSource, joy, rz2, xCenter, yCenter, screenXpixels, screenYpixels, pointer_offset);
+    [x, y] = ReadCursorPosition(taskWindow, inputSource, joy, rz2, xCenter, yCenter, screenXpixels, screenYpixels, pointer_offset, joyGain);
     % sampleTime: the instant THIS cursor sample was taken, and the only
     % clock the base trajectory rows below are stamped with. Deliberately
     % not this_time (captured at the top of the iteration, i.e. BEFORE the
@@ -1409,7 +1560,18 @@ while exitFlag == 0
     trigTime   = sessionT0 + trajBuf(trigRowIdx, 2) / 1000;
 
     % --- Render ---
-    if showCursor
+    if this_time < foilFlashUntil
+        % Transient foil flash (pre-training, only when showErrorFlash is on):
+        % alternate white/black WITHOUT aborting the trial. The normal scene is
+        % skipped this frame and reappears when the flash expires; a new foil
+        % entry re-arms foilFlashUntil (that is the "reset"). See EP.MOVEMENT.
+        if mod(floor((this_time - foilFlashStart) / 0.1), 2) == 0
+            Screen('FillRect', taskWindow, white_c);
+        else
+            Screen('FillRect', taskWindow, black_c);
+        end
+        Screen('Flip', taskWindow);
+    elseif showCursor
         for k = 1:3
             if targetOn(k), Screen('FillOval', taskWindow, tarColor{k}, tarPos{k}); end
         end
@@ -1452,7 +1614,7 @@ while exitFlag == 0
         if moveOversample > 0 && ~useRZ2
             for oi = 1:moveOversample
                 pause(moveOversampleDt);
-                [xOver, yOver] = ReadCursorPosition(taskWindow, inputSource, joy, rz2, xCenter, yCenter, screenXpixels, screenYpixels, pointer_offset);
+                [xOver, yOver] = ReadCursorPosition(taskWindow, inputSource, joy, rz2, xCenter, yCenter, screenXpixels, screenYpixels, pointer_offset, joyGain);
                 sampleTime = GetSecs();   % same convention as the base row above: stamp at this sample's own read
                 trajN = trajN + 1;
                 if trajN > size(trajBuf, 1)
@@ -1480,8 +1642,8 @@ while exitFlag == 0
         % so DecisionTime_s and Time_ms remain directly comparable.
         %
         % Placed before the state machine below on purpose: the frame that
-        % first draws the targets is also the frame EP.REACTION first runs,
-        % so t.targetOnset is already valid when REACTION reads it; there
+        % first draws the targets is also the frame EP.DECISION_TIME first runs,
+        % so t.targetOnset is already valid when DECISION_TIME reads it; there
         % is never an iteration where it is still 0.
         if awaitTargetOnset
             t.targetOnset    = stimOnsetTime;
@@ -1490,7 +1652,7 @@ while exitFlag == 0
     end
 
     % Target hit-tests are only meaningful once targets are up
-    if nextEpoch == EP.REACTION || nextEpoch == EP.MOVEMENT
+    if nextEpoch == EP.DECISION_TIME || nextEpoch == EP.MOVEMENT
         inTarget = [0 0 0];
         for k = 1:curNumCat, inTarget(k) = CheckInTargetCenterOut(x, y, tarPos{k}); end
     end
@@ -1522,7 +1684,7 @@ while exitFlag == 0
             if inCenterCircle
                 if setOnce_Hold
                     Screen('DrawLines', taskWindow, FixPoint, 4, white_c, [xCenter yCenter], 2);
-                    Screen('FrameOval', taskWindow, gray_c, centerCircle, [], 4, 4);
+                    Screen('FrameOval', taskWindow, centerWaitColor, centerCircle, [], 4, 4);
                     t.holdFlip = Screen('Flip', taskWindow);
                     setOnce_Hold = 0;
                     targetOn(1) = 0;  targetOn(2) = 0;  showCursor = 1;
@@ -1622,7 +1784,7 @@ while exitFlag == 0
                         trial_sequence_index, trialNumCat, trialDirs, trialColorRows, ...
                         trialCorrectSlot, trialCatIndices, colorArray2Cat, colorArray3Cat, Targets4Dir);
                     awaitTargetOnset = 1;   % stamped by the next flip, not here
-                    nextEpoch = EP.REACTION;
+                    nextEpoch = EP.DECISION_TIME;
                 end
             end
 
@@ -1635,10 +1797,10 @@ while exitFlag == 0
                     trial_sequence_index, trialNumCat, trialDirs, trialColorRows, ...
                     trialCorrectSlot, trialCatIndices, colorArray2Cat, colorArray3Cat, Targets4Dir);
                 awaitTargetOnset = 1;   % stamped by the next flip, not here
-                nextEpoch = EP.REACTION;
+                nextEpoch = EP.DECISION_TIME;
             end
 
-        case EP.REACTION
+        case EP.DECISION_TIME
             % Safety net only: t.targetOnset is normally already stamped by
             % the flip in the render block above, on this very frame. It can
             % only still be pending if that flip did not run at all (i.e.
@@ -1649,7 +1811,7 @@ while exitFlag == 0
                 t.targetOnset    = trigTime;
                 awaitTargetOnset = 0;
             end
-            if this_time <= t.targetOnset + targetDuration
+            if this_time <= t.targetOnset + maxDecisionTime
                 if ~inCenterCircle && ~t.leaveCenter
                     % trigTime, not GetSecs(): the exit was detected from
                     % THIS frame's sample, which was read before the render
@@ -1660,7 +1822,7 @@ while exitFlag == 0
                     % oversampled rows taken after it, all already outside
                     % the centre) as MOVEMENT. Without this the epoch
                     % label lands one frame late: the triggering sample
-                    % stays REACTION and the first MOVEMENT row is the next
+                    % stays DECISION_TIME and the first MOVEMENT row is the next
                     % frame's, putting MoveTime_ms == 0 a frame behind
                     % t.leaveCenter. Re-tagging also hands TrialKinematics
                     % the real first point of the movement, which it was
@@ -1673,23 +1835,61 @@ while exitFlag == 0
             end
 
         case EP.MOVEMENT
-            if this_time <= t.targetOnset + targetDuration
+            % Ventana de movimiento vigente en ESTE frame.
+            withinWindow = this_time <= t.leaveCenter + maxExecutionTime;
+
+            % --- Diagnostico: entrada a un foil por FLANCO (no por frame) ---
+            % Solo cuenta; no cambia el estado ni penaliza. En modo indulgente
+            % el sujeto puede tocar varios foils antes de acertar.
+            inFoilNow = any(inTarget) && ~inTarget(correctTarget);
+            if forgiveFoils && inFoilNow && ~wasInFoil && withinWindow
+                % Cada ENTRADA nueva a un foil (por flanco) cuenta como un error
+                % de target equivocado. El ensayo NO se aborta: el mismo estimulo
+                % se queda y el sujeto sigue hasta el target correcto (o hasta que
+                % expire targetDuration). Como el estimulo no cambia, cada
+                % reentrada al foil vuelve a contar aqui como otro error.
+                foilTouches = foilTouches + 1;
+                error_wrong_target = error_wrong_target + 1;
+                if current_trial_color >= 1
+                    foilTouches_grp(current_trial_color) = foilTouches_grp(current_trial_color) + 1;
+                    error_wrong_grp(current_trial_color) = error_wrong_grp(current_trial_color) + 1;
+                end
+                % Flash SOLO si el checkbox "Show error flash" esta activado. Se
+                % re-arma en cada entrada (por eso "se reinicia"): un flash
+                % transitorio que NO aborta el ensayo (ver el bloque de Render).
+                % Con el checkbox apagado, el error se cuenta igual pero sin flash.
+                if showErrorFlash
+                    foilFlashStart = this_time;
+                    foilFlashUntil = this_time + tarErrorFeed;
+                end
+                % Registro por-entrada: qué foil se tocó y cuándo, bufferizado
+                % en memoria (sin I/O de disco aquí). Se vuelca en BOOKKEEP.
+                foilK = find(inTarget, 1);   % el slot del foil entrado (inTarget del correcto es falso aquí)
+                nFoilPending = nFoilPending + 1;
+                foilEventBuf(nFoilPending, :) = [trajBlockNum, trajTrialNumInBlock, stimAttempt, ...
+                    current_trial_color, trialColorRows(trial_sequence_index, foilK), ...
+                    current_trial_direction, trialDirs(trial_sequence_index, foilK), ...
+                    trialBarIndices(trial_sequence_index), this_time - t.targetOnset];
+            end
+            wasInFoil = inFoilNow;
+
+            if withinWindow
                 if inTarget(correctTarget)
                     if ~t.reachTarget
                         % trigTime for the same reason as t.leaveCenter
                         % above: inTarget was hit-tested against THIS
-                        % frame's sample. Both ends of reactionTime are now
+                        % frame's sample. Both ends of executionTime are now
                         % sample timestamps, so the interval matches what
                         % the trajectory files show instead of carrying a
                         % frame of state-machine latency at each end.
                         t.reachTarget = trigTime;
                         decisionTime  = t.leaveCenter - t.targetOnset;   % target-onset -> leave-center
-                        reactionTime  = t.reachTarget - t.leaveCenter;   % leave-center -> reach-target
+                        executionTime  = t.reachTarget - t.leaveCenter;   % leave-center -> reach-target
                         chosen_target_color = trialColorRows(trial_sequence_index, correctTarget);
                         chosen_target_direction = trialDirs(trial_sequence_index, correctTarget);
                         if current_trial_color > 0 && current_trial_direction > 0
                             % NOTE the name collision, which the CSV rename
-                            % (ReactionTime_s now = leave-center -> reach-target)
+                            % (ExecutionTime_s now = leave-center -> reach-target)
                             % made sharper: this cell holds decisionTime, and
                             % the console table and perf_*.mat still call it
                             % "mean reaction time", a DIFFERENT interval from
@@ -1714,34 +1914,95 @@ while exitFlag == 0
                         nextEpoch = EP.TARGET_HOLD;
                     end
                 elseif any(inTarget)   % a wrong-colour target was entered
-                    wrongK = find(inTarget, 1);
-                    reactionTime = trigTime - t.leaveCenter;   % leave-center -> reach-target (wrong one)
-                    chosen_target_color = trialColorRows(trial_sequence_index, wrongK);
-                    chosen_target_direction = trialDirs(trial_sequence_index, wrongK);
-                    if current_trial_color > 0 && current_trial_direction > 0
-                        cell_n = total_trials_matrix(current_trial_color, current_trial_direction);
-                        if cell_n == 0 || (cell_n > 0 && error_type == 0)
-                            total_trials_matrix(current_trial_color, current_trial_direction) = cell_n + 1;
-                            % Counted under the SAME condition as the line
-                            % above, not independently, so the per-length
-                            % table can never disagree with the per-category
-                            % one it refines.
-                            lenIdxNow = trialBarIndices(trial_sequence_index);
-                            total_trials_lenpos(lenIdxNow, current_trial_direction) = ...
-                                total_trials_lenpos(lenIdxNow, current_trial_direction) + 1;
+                    if forgiveFoils
+                        % ENTRENAMIENTO INDULGENTE: el foil NO aborta ni cuenta
+                        % como error. Sin cambio de epoca: el ensayo permanece
+                        % en EP.MOVEMENT y el sujeto puede seguir hasta el
+                        % target correcto (o hasta que expire targetDuration,
+                        % gestionado por la rama ~withinWindow de abajo). El
+                        % tanteo ya quedo contabilizado por flanco arriba.
+                    else
+                        % Conducta original: elegir un target de color incorrecto
+                        % es un wrong-target error (error_type = 2, con flash).
+                        wrongK = find(inTarget, 1);
+                        executionTime = trigTime - t.leaveCenter;   % leave-center -> reach-target (wrong one)
+                        chosen_target_color = trialColorRows(trial_sequence_index, wrongK);
+                        chosen_target_direction = trialDirs(trial_sequence_index, wrongK);
+                        if current_trial_color > 0 && current_trial_direction > 0
+                            cell_n = total_trials_matrix(current_trial_color, current_trial_direction);
+                            if cell_n == 0 || (cell_n > 0 && error_type == 0)
+                                total_trials_matrix(current_trial_color, current_trial_direction) = cell_n + 1;
+                                % Counted under the SAME condition as the line
+                                % above, not independently, so the per-length
+                                % table can never disagree with the per-category
+                                % one it refines.
+                                lenIdxNow = trialBarIndices(trial_sequence_index);
+                                total_trials_lenpos(lenIdxNow, current_trial_direction) = ...
+                                    total_trials_lenpos(lenIdxNow, current_trial_direction) + 1;
+                            end
                         end
+                        nextEpoch = EP.ERROR_FB;  error_type = 2;
                     end
-                    nextEpoch = EP.ERROR_FB;  error_type = 2;
                 end
-            elseif ~any(inTarget)
+            elseif ~withinWindow
+                % Expiro targetDuration sin alcanzar el target correcto. Se
+                % cierra como error_type = 1. A diferencia del original, esto
+                % dispara AUNQUE el cursor este dentro de un foil: en modo
+                % indulgente el foil ya no genera transicion, asi que la
+                % ventana es lo unico que garantiza el fin del ensayo.
                 nextEpoch = EP.ERROR_FB;  error_type = 1;
             end
 
         case EP.TARGET_HOLD
-            if this_time > t.reachTarget + minTarHoldTime && inTarget(correctTarget)
-                t.reward = GetSecs();
-                reward = rewTime;
-                nextEpoch = EP.REWARD;
+            % Dos modos, seleccionables desde la consola (strictHold):
+            %
+            % strictHold = true  (ESTRICTO): el cursor debe permanecer DENTRO del
+            %   target correcto minTarHoldTime CONTINUOS desde el primer contacto
+            %   (t.reachTarget). Salir aunque sea una vez ABORTA el ensayo como
+            %   salida temprana (error_type = 1, sin reward); no hay segunda
+            %   oportunidad en el mismo ensayo.
+            %
+            % strictHold = false (INDULGENTE, default): salir del target NO aborta;
+            %   solo REINICIA el conteo (t.holdStart), y el sujeto puede volver al
+            %   target y, si se queda minTarHoldTime seguidos, IGUAL cobra reward.
+            %   Acotado por la ventana de movimiento (t.leaveCenter +
+            %   maxExecutionTime): si no logra un hold limpio dentro de ella,
+            %   cierra sin reward (error_type = 1).
+            %
+            % En ambos casos, al cerrar por fallo de hold se resetea
+            % chosen_target_color/direction para conservar la invariante
+            % error_type==1 => sin eleccion de categoria (no ensucia la matriz de
+            % confusion; se cuenta/re-encola como cualquier early exit).
+            if strictHold
+                if ~inTarget(correctTarget)
+                    chosen_target_color = -1;
+                    chosen_target_direction = 0;
+                    nextEpoch = EP.ERROR_FB;  error_type = 1;
+                elseif this_time > t.reachTarget + minTarHoldTime
+                    t.reward = GetSecs();
+                    reward = rewTime;
+                    nextEpoch = EP.REWARD;
+                end
+            else
+                rewarded = false;
+                if inTarget(correctTarget)
+                    if ~t.holdStart
+                        t.holdStart = this_time;   % ancla al (re)ingreso al target
+                    end
+                    if this_time >= t.holdStart + minTarHoldTime
+                        t.reward = GetSecs();
+                        reward = rewTime;
+                        nextEpoch = EP.REWARD;
+                        rewarded = true;
+                    end
+                else
+                    t.holdStart = 0;   % salir reinicia el conteo (sin abortar)
+                end
+                if ~rewarded && this_time > t.leaveCenter + maxExecutionTime
+                    chosen_target_color = -1;
+                    chosen_target_direction = 0;
+                    nextEpoch = EP.ERROR_FB;  error_type = 1;
+                end
             end
 
         case EP.REWARD
@@ -1898,7 +2159,15 @@ while exitFlag == 0
                 end
             end
             showCursor = 0;
-            if error_type == 2   % flash the screen for wrong-target errors
+            % Flash policy: the ONLY event that can flash is a WRONG-TARGET pick
+            % (error_type == 2). A hold/reach failure or early exit
+            % (error_type == 1) NEVER flashes -- the trial just ends without
+            % reward. In the NORMAL categorization task (trainingPhase == 0) a
+            % wrong-target pick ALWAYS flashes (it IS the trial's response and
+            % must be marked); only in pre-training (trainingPhase > 0) is that
+            % flash gated by the "Show error flash" checkbox (showErrorFlash,
+            % off by default -> the foil pick resolves without a flash there).
+            if error_type == 2 && (trainingPhase == 0 || showErrorFlash)
                 if mod(floor((this_time - t.marker) / 0.1), 2) == 0
                     Screen('FillRect', taskWindow, white_c);
                 else
@@ -1992,8 +2261,8 @@ while exitFlag == 0
                 if t.targetOnset > 0 && t.leaveCenter > 0
                     decisionTime = t.leaveCenter - t.targetOnset;
                 end
-                if ~isnan(decisionTime) && ~isnan(reactionTime)
-                    totalTime = decisionTime + reactionTime;   % total stimulus-to-completion time
+                if ~isnan(decisionTime) && ~isnan(executionTime)
+                    totalTime = decisionTime + executionTime;   % total stimulus-to-completion time
                 end
                 barVA_log = target_angles(trialBarIndices(trial_sequence_index));
                 if chosen_target_direction >= 1
@@ -2001,59 +2270,45 @@ while exitFlag == 0
                 else
                     dirChosenStr = 'None';   % no target entered (early exit)
                 end
-                % Cursor speed/acceleration (px/s, px/s^2) during this trial's
-                % MOVEMENT epoch, from the per-frame trajectory buffer already
-                % logged above (trajBuf holds every frame up through ITI by
-                % the time BOOKKEEP runs, so this trial's MOVEMENT rows are
-                % all there). NaN for trials with too few MOVEMENT samples to
-                % differentiate (e.g. an early exit that never left centre),
-                % and NaN again for a segment too short to RESOLVE a peak
-                % (kinematicsMinMoveSamples); nMoveSamples below is the true
-                % raw count on both of those paths, so a NaN row in the CSV
-                % can be explained from the CSV itself.
-                [peakVel, meanVel, peakAccel, nMoveSamples] = TrialKinematics(trajBuf, trajN, total_trials, EP.MOVEMENT.Value, ...
-                    kinematicsGridDt, kinematicsCutoffHz, kinematicsOutlierMethod, hampelHalfWindow, hampelNSigma, ...
-                    kinematicsMinMoveSamples, kinematicsMinMoveDurSec);
-                % TrialKinematics works in pixels, which are not a fixed
-                % physical unit; the same px/s means a different real
-                % speed on a different monitor/resolution. Convert once, to
-                % physical screen-plane speed (cm/s, cm/s^2): pixel_pitch is
-                % already mm/px (see allBarSizes above), so /10 gives cm/px.
-                % This is the actual distance the cursor covers on the
-                % screen and, unlike a deg-of-visual-angle form, it does not
-                % depend on viewing distance.
-                % Velocity and acceleration are both linear in position, so
-                % the one scale factor applies to each without re-deriving
-                % it per derivative order.
-                cmPerPx      = pixel_pitch / 10;
-                peakVelCm    = peakVel   * cmPerPx;
-                meanVelCm    = meanVel   * cmPerPx;
-                peakAccelCm  = peakAccel * cmPerPx;
-                fid_log = fopen(trialLogFile, 'a');
+                % Per-trial kinematics (peak/mean velocity, peak acceleration)
+                % are no longer computed or written -- TrialKinematics is not
+                % called and no trial_kinematics_*.csv is produced. The full
+                % trajectory export (SaveTrajectory below, every epoch, every
+                % sample) is kept, so velocities can still be derived offline
+                % from it if ever wanted.
                 % PlannedDirection: the ORIGINALLY planned position for this
                 % sequence slot (trialPositions, unaffected by a correction
                 % retry's in-place reshuffle); see the CSV header comment
                 % above for why this sits alongside DirectionCorrect (this
                 % attempt's actual shown position) instead of replacing it.
                 plannedDirForLog = directionNames_log{trialPositions(trial_sequence_index)};
-                % Column order is Date,...,DecisionTime,ReactionTime,TotalTime,--
+                % Column order is Date,...,DecisionTime,ExecutionTime,TotalTime,--
                 % the same three intervals, in the same positions, that
-                % v2_2-era files carry; two of the LABELS differ (see
-                % the pooling warning where these are initialised):
-                %   DecisionTime_s = decisionTime (target-onset -> leave-center)
-                %   ReactionTime_s = reactionTime (leave-center -> reach-target;
-                %                    called ExecutionTime in v2_2-era files)
-                %   TotalTime_s    = totalTime    (decision + reaction;
+                % v2_2-era files carry (see the pooling warning where these
+                % are initialised):
+                %   DecisionTime_s  = decisionTime (target-onset -> leave-center)
+                %   ExecutionTime_s = executionTime (leave-center -> reach-target;
+                %                    called ExecutionTime in v2_2-era files too)
+                %   TotalTime_s    = totalTime    (decision + execution;
                 %                    called ReactionTime in v2_2-era files)
-                fprintf(fid_log, '%s,%d,%d,%s,%.2f,%.4f,%.4f,%.4f,%d,%d,%s,%s,%s,%d,%d,%s,%d,%.4f,%.4f,%.4f,%d\n', ...
+                fid_log = fopen(trialLogFile, 'a');
+                fprintf(fid_log, '%s,%d,%d,%s,%.2f,%.4f,%.4f,%.4f,%d,%d,%s,%s,%s,%d,%d,%s,%d\n', ...
                     sessionDate, blockNum, trialNumInBlock, colorNames_log{current_trial_color}, ...
-                    barVA_log, decisionTime, reactionTime, totalTime, good_trial, error_type, ...
+                    barVA_log, decisionTime, executionTime, totalTime, good_trial, error_type, ...
                     dirChosenStr, directionNames_log{current_trial_direction}, plannedDirForLog, chosen_target_color, ...
-                    prevTrialCorrect, prevTrialDirection, stimAttempt, ...
-                    peakVelCm, meanVelCm, peakAccelCm, nMoveSamples);
+                    prevTrialCorrect, prevTrialDirection, stimAttempt);
                 fclose(fid_log);
                 prevTrialCorrect   = good_trial;
                 prevTrialDirection = dirChosenStr;
+            end
+
+            % Flush this trial's buffered foil entries (one row per entry) to
+            % foil_events_<runTag>.csv. Done here in BOOKKEEP, not inside the
+            % tracking loop, so no disk I/O ever hits the real-time cursor path.
+            if forgiveFoils && nFoilPending > 0
+                nFoilPending = flushFoilBuffer(foilEventsLogFile, foilEventBuf, nFoilPending, ...
+                    sessionDate, colorNames_log, directionNames_log, target_angles);
+                foilEventBuf = zeros(0, 9);
             end
 
             % Refresh what the quota counts, for THIS trial, before testing
@@ -2203,10 +2458,12 @@ try
 
     S.good_trials = good_trials;            S.total_trials = total_trials;
     % Session duration, measured from the first hold (see sessionHoldT0).
-    % Empty when no trial ever reached the hold; kept empty rather than 0
+    % Empty when no trial ever reached the hold, kept empty rather than 0
     % so a later analysis can tell "never started" from "instantaneous".
     S.sessionSeconds = sessionSeconds;
     S.error_early_exit = error_early_exit;  S.error_wrong_target = error_wrong_target;
+    S.foilTouches = foilTouches;            S.foilTouches_grp = foilTouches_grp;
+    S.foilNoAbort = foilNoAbort;            S.forgiveFoils = forgiveFoils;
     S.good_trials_grp = good_trials_grp;    S.total_trials_grp = total_trials_grp;
     S.error_early_grp = error_early_grp;    S.error_wrong_grp = error_wrong_grp;
     S.reaction_times = reaction_times;
@@ -2276,7 +2533,23 @@ try
     % trial_data_*.csv) already identify each row uniquely. Rows here match
     % trial_data_*.csv 1:1 on Block+TrialNumInBlock+Attempt, and both files
     % share the runTag/session id via `d`.
-    SaveMovementTrajectory(trajBuf, trajN, outDir, d, sessionDate, EP.MOVEMENT.Value);
+    % FULL multi-epoch trajectory (every epoch, every sample) -- always
+    % written now, so trajectory maps of the hold/cue/reaction period exist
+    % alongside the movement-only cut below. The two are independent peers
+    % sharing the same runTag `d`; neither calls the other.
+    SaveTrajectory(trajBuf, trajN, outDir, d, sessionDate, true, true);
+    % Filtered movement cut: DECISION_TIME + MOVEMENT + TARGET_HOLD only
+    % (kinematicsEpochs). A separate, smaller file for movement analysis,
+    % alongside the full export above. TrialKinematics is no longer computed,
+    % but this trajectory file is still written.
+    SaveMovementTrajectory(trajBuf, trajN, outDir, d, sessionDate, kinematicsEpochs);
+    % Final flush: foil entries from a last trial that ended (stop key / operator
+    % abort) before its BOOKKEEP ran are written here so none are lost.
+    if forgiveFoils && nFoilPending > 0
+        nFoilPending = flushFoilBuffer(foilEventsLogFile, foilEventBuf, nFoilPending, ...
+            sessionDate, colorNames_log, directionNames_log, target_angles);
+        foilEventBuf = zeros(0, 9);
+    end
 catch ME_save
     fprintf('WARNING: error during matrix computation or save: %s\n', ME_save.message);
 end
@@ -2300,6 +2573,13 @@ try
         correct_trials_lenpos, lengthCategory);
 catch ME_print
     fprintf('WARNING: error during console printout: %s\n', ME_print.message);
+end
+
+% --- Resumen de foils indulgentes (solo si el modo estuvo activo) --------
+if forgiveFoils
+    fprintf(['Foil-forgiving: %d entradas a distractores (no penalizadas). ' ...
+        'Por grupo [S M L]: [%d %d %d].\n'], ...
+        foilTouches, foilTouches_grp(1), foilTouches_grp(2), foilTouches_grp(3));
 end
 
 try
@@ -2361,9 +2641,9 @@ CleanupRZ2Joystick(rz2);   % release port 8831, or the next rz2adc run fails to 
 % abortedByOperator covers both ways a run ends early; the console's
 % Abort button and the engine's own stop key.
 if abortedByOperator
-    AlertTaskDone('stopped', OrgGet(orgParams, 'alertOnFinish', true));
+    AlertTaskDone('stopped', OrgGet(orgParams, 'alertOnFinish', true), OrgGet(orgParams, 'alertAudioDevice', []));
 else
-    AlertTaskDone('done', OrgGet(orgParams, 'alertOnFinish', true));
+    AlertTaskDone('done', OrgGet(orgParams, 'alertOnFinish', true), OrgGet(orgParams, 'alertAudioDevice', []));
 end
 close(orgParams.handles.dlgTrainingMain);
 
@@ -2387,14 +2667,29 @@ catch ME
             % of setup lines, before any trial has run and therefore before
             % trajBuf holds anything but zeros, which is why the trade is
             % acceptable here.
-            if exist('EP', 'var')
-                SaveMovementTrajectory(trajBuf, trajN, outDir, d, dateForLog, EP.MOVEMENT.Value);
-                fprintf('Movement trajectory salvaged after crash: %d samples in buffer\n', trajN);
-            else
-                fprintf('WARNING: crashed before the epoch table existed -- no trajectory salvaged.\n');
+            % Full multi-epoch export always salvaged; the movement-only cut
+            % additionally when the epoch table survived the crash.
+            SaveTrajectory(trajBuf, trajN, outDir, d, dateForLog, true, true);
+            fprintf('Full trajectory salvaged after crash: %d samples in buffer\n', trajN);
+            if exist('EP', 'var') && exist('kinematicsEpochs', 'var')
+                SaveMovementTrajectory(trajBuf, trajN, outDir, d, dateForLog, kinematicsEpochs);
+                fprintf('Movement cut salvaged after crash: %d samples in buffer\n', trajN);
             end
         catch
             fprintf('WARNING: could not salvage trajectory after crash.\n');
+        end
+    end
+    % Salvage any buffered foil entries that never reached BOOKKEEP. Guarded by
+    % exist() because a crash may predate these variables.
+    if exist('forgiveFoils', 'var') && forgiveFoils && exist('nFoilPending', 'var') && nFoilPending > 0 ...
+            && exist('foilEventBuf', 'var') && exist('foilEventsLogFile', 'var')
+        try
+            if exist('sessionDate', 'var'), foilDateForLog = sessionDate; else, foilDateForLog = datestr(now, 'dd-mm-yyyy'); end
+            nFoilPending = flushFoilBuffer(foilEventsLogFile, foilEventBuf, nFoilPending, ...
+                foilDateForLog, colorNames_log, directionNames_log, target_angles);
+            fprintf('Foil-events salvaged after crash.\n');
+        catch
+            fprintf('WARNING: could not salvage foil events after crash.\n');
         end
     end
     try, CloseTask; catch, end
@@ -2409,7 +2704,7 @@ catch ME
     % Distinct "it crashed" alert: the one ending an operator most needs to
     % hear from across the room, since the console alone just shows a
     % stopped run. Same last-thing placement as the normal path above.
-    AlertTaskDone('error', OrgGet(orgParams, 'alertOnFinish', true));
+    AlertTaskDone('error', OrgGet(orgParams, 'alertOnFinish', true), OrgGet(orgParams, 'alertAudioDevice', []));
     try, close(orgParams.handles.dlgTrainingMain); catch, end
 end
 end % CenterOutTask
@@ -2418,11 +2713,38 @@ end % CenterOutTask
 % =========================================================================
 % LOCAL HELPER FUNCTIONS
 % =========================================================================
+function n = flushFoilBuffer(logFile, buf, n, sessionDate, colorNames_log, directionNames_log, target_angles)
+% Append the first n buffered foil-entry rows of `buf` to `logFile` (append
+% mode) and return 0 (buffer considered flushed). No-op when n <= 0. One
+% source of truth for both the per-trial flush in BOOKKEEP and the final
+% teardown/crash flush, so the row format cannot drift between them.
+if n <= 0
+    return;
+end
+fid = fopen(logFile, 'a');
+if fid < 0
+    return;   % could not open (e.g. path gone); leave n unchanged so a later attempt can retry
+end
+for fe = 1:n
+    r = buf(fe, :);
+    grpIx = r(4);  foilColIx = r(5);  corDir = r(6);  foilDir = r(7);  barIx = r(8);
+    if grpIx     >= 1, grpName     = colorNames_log{grpIx};       else, grpName     = 'NA';   end
+    if foilColIx >= 1, foilColName = colorNames_log{foilColIx};   else, foilColName = 'NA';   end
+    if corDir    >= 1, corDirName  = directionNames_log{corDir};  else, corDirName  = 'None'; end
+    if foilDir   >= 1, foilDirName = directionNames_log{foilDir}; else, foilDirName = 'None'; end
+    fprintf(fid, '%s,%d,%d,%d,%s,%.2f,%s,%s,%s,%.4f\n', ...
+        sessionDate, r(1), r(2), r(3), grpName, target_angles(barIx), ...
+        corDirName, foilDirName, foilColName, r(9));
+end
+fclose(fid);
+n = 0;
+end
+
 function t = initTimes()
 % Named time markers for one trial (replaces the magic-indexed array).
 t = struct('holdFlip', 0, 'centerHold', 0, 'barOnset', 0, 'barEnd', 0, ...
         'targetOnset', 0, 'leaveCenter', 0, 'reachTarget', 0, 'reward', 0, ...
-        'blank', 0, 'marker', 0, 'cueEnd', 0, 'cueOnset', 0);
+        'blank', 0, 'marker', 0, 'cueEnd', 0, 'cueOnset', 0, 'holdStart', 0);
 end
 
 function paintProgressStatus(handles, trialIdx, budgetTrials, plannedBlocks, ...

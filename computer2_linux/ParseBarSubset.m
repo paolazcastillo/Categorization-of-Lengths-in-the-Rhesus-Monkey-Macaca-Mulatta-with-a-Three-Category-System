@@ -1,5 +1,6 @@
 function [idx, errMsg] = ParseBarSubset(spec, numLengths)
 % PARSEBARSUBSET  Operator's bar-length selection -> stimulus-set indices.
+%   Paola Castillo 2026-07-31
 %
 %   Turns the console's "Bar lengths (subset)" text field into the index
 %   vector CenterOutTask.m uses to cut its active stimulus set down to the
@@ -20,7 +21,7 @@ function [idx, errMsg] = ParseBarSubset(spec, numLengths)
 %   INPUT
 %     spec       : selection string (or numeric vector), see forms above
 %     numLengths : how many lengths the active stimulus set has (12 for
-%                  'full12', 3 for 'prototypes3'); indices must fall in
+%                  'full12', 3 for 'prototypes3') -- indices must fall in
 %                  1..numLengths
 %
 %   OUTPUT

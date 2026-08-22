@@ -1,5 +1,6 @@
 function inside = CheckInTargetCenterOut(x, y, targetRect)
 % CHECKINTARGETCENTEROUT  True if point (x,y) is inside a target.
+%   Paola Castillo 2026-07-31
 %
 %   Deterministic helper reconstructed from its call site in
 %   CenterOutTask.m:

@@ -1,15 +1,17 @@
-function CategTaskCommunication()
+function categTaskCommunication()
 % CATEGTASKCOMMUNICATION  Launcher for the Synapse-side communication bridge.
-%   Programmatic figure()/uicontrol() GUI (no .fig file needed), Computer 1
+%   Paola Castillo 2026-07-31
+%
+%   Programmatic figure()/uicontrol() GUI (no .fig file needed) -- Computer 1
 %   only (Windows). The "Run" button adds the local 'libraries' folder and
 %   computer1_synapse/ to the path, publishes the GUI handles globally (as
-%   CommunicationCategTaskACTX expects), and calls
-%   computer1_synapse/CommunicationCategTaskACTX.m, the ActiveX routine
+%   Communication_CategTask_ACTX expects), and calls
+%   computer1_synapse/Communication_CategTask_ACTX.m, the ActiveX routine
 %   that bridges this (Synapse) computer to the task computer over UDP.
 %   No eye-tracking controls (removed per lab request); no database/NAS
 %   connection either.
 %
-% See also: computer1_synapse/CommunicationCategTaskACTX
+% See also: computer1_synapse/Communication_CategTask_ACTX
 
 fig = figure('Name', 'CategTask Communication', 'NumberTitle', 'off', ...
     'MenuBar', 'none', 'ToolBar', 'none', 'Resize', 'off', ...
@@ -43,17 +45,12 @@ end
 % ===========================================================================
 function pushbuttonRun_Callback(hObject, ~)
 % Put libraries and computer1_synapse/ on the path, publish the GUI handles
-% globally (CommunicationCategTaskACTX reads handles_glob, same contract
+% globally (Communication_CategTask_ACTX reads handles_glob, same contract
 % the old GUIDE version used), then run it.
 global handles_glob;
 ui = guidata(hObject);
 addpath(genpath('libraries'));
-% This file already lives IN computer1_synapse/, so its own folder is the
-% one to add. It used to append 'computer1_synapse' to that folder, which
-% built the non-existent computer1_synapse/computer1_synapse and made
-% addpath warn; the Run button only worked because MATLAB happened to have
-% this file's own folder on the path already (that is how it got called).
-addpath(fileparts(mfilename('fullpath')));
+addpath(fullfile(fileparts(mfilename('fullpath')), 'computer1_synapse'));
 handles_glob = ui;
-CommunicationCategTaskACTX();
+Communication_CategTask_ACTX();
 end

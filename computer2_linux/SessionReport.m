@@ -2,6 +2,7 @@
 classdef SessionReport
 % SESSIONREPORT  End-of-session console reporting for the center-out
 % length-categorization task.
+% Paola Castillo 2026-07-31
 %
 % Grouped here because the four printouts form one coherent stage of the
 % pipeline (they all consume the final session tallies and write to the
@@ -11,7 +12,7 @@ classdef SessionReport
 %
 % These are STATIC methods, i.e. this class is a namespace rather than a
 % stateful object. That is deliberate: the printers hold no state between
-% calls (each takes the tallies it needs and writes them out) so giving
+% calls -- each takes the tallies it needs and writes them out -- so giving
 % the class properties would invent coupling that the code does not have,
 % and would force every caller to build an object before it could print a
 % single table. If the argument lists later grow unwieldy, the natural next
@@ -22,7 +23,7 @@ classdef SessionReport
 %   Level 1  blocks           per-block tallies
 %   Level 2  session          session-wide totals, quotas, RT/accuracy
 %   plus     reward           water delivered (trial + manual), shared with
-%                             CenterInTask.m; the one printer here that is
+%                             CenterInTask.m -- the one printer here that is
 %                             not center-out specific
 %   plus     confusion        true x chosen category matrix
 %   plus     signalDetection  one-vs-rest SDT breakdown of that matrix
@@ -34,18 +35,18 @@ classdef SessionReport
         function blocks(blockStats, sessionMode)
         % BLOCKS  Level 1 of the 2-level end-of-session report: one row
         % per block (block = one blockSize-trial rotation through the pseudorandom
-        % sequence; see blockStats/blockSize in the main function), printed
+        % sequence -- see blockStats/blockSize in the main function), printed
         % before SessionReport.session's Level 2 (session = all blocks combined).
         %
         % Mix(2/3) is how many of this block's trials were 2-category vs.
         % 3-category, tallied straight from the sequence for every attempt (not
-        % assumed from a fixed layout); so a block stays correct whether it's a
+        % assumed from a fixed layout) -- so a block stays correct whether it's a
         % uniform '3cat'/'2cat' session, a block that happens to straddle an
         % 'alternate' 2-cat/3-cat switch, or an 'interleaved' block with both mixed
         % trial-by-trial.
         %
         % A PURE 2-cat session (sessionMode == '2cat') drops the Mid column from
-        % "By category"; it would only ever show 0/0 there, since 2-cat trials
+        % "By category" -- it would only ever show 0/0 there, since 2-cat trials
         % never draw Mid. 'alternate'/'interleaved' sessions genuinely mix in Mid
         % trials, so they keep all three columns.
         if nargin < 2, sessionMode = ''; end
@@ -133,7 +134,7 @@ classdef SessionReport
         end
 
         % Same (length x position) tally, split by how many categories that attempt
-        % was drawn from, the "total" table above pools 2-cat and 3-cat attempts
+        % was drawn from -- the "total" table above pools 2-cat and 3-cat attempts
         % at the same length together, which hides a real distinction in sessionMode
         % = 'alternate'/'interleaved': the 2-cat and 3-cat tasks use DIFFERENT
         % length->category splits (see lengthCat2 vs lengthCategory in the main
@@ -144,7 +145,7 @@ classdef SessionReport
         % conflated.
         % Same idea as the header above: prefix is 23 chars here
         % ('  %2d. %6.4f deg VA:   '), then two 15-char '%3d %3d %3d %3d'
-        % blocks separated by a 6-char gap; built from those exact widths
+        % blocks separated by a 6-char gap -- built from those exact widths
         % instead of hand-typed spaces (which had drifted out of alignment).
         fprintf('\n--- Same, split by category-count (2-cat / 3-cat) --- (2cat + 3cat = total above)\n');
         fprintf('%23s%-15s      %-15s\n', '', '2-cat', '3-cat');
@@ -161,7 +162,7 @@ classdef SessionReport
         end
         % Header built from the SAME field widths each data row below uses
         % (10-char prefix: 6-char rowName + 4 literal spaces, then four
-        % 8-char columns separated by 2 spaces), the previous hand-typed
+        % 8-char columns separated by 2 spaces) -- the previous hand-typed
         % header spaces drifted out of alignment by a full column's width
         % by the time they reached "Down".
         dirHeader = sprintf('%10s%8s  %8s  %8s  %8s', '', 'Right', 'Up', 'Left', 'Down');
@@ -186,7 +187,7 @@ classdef SessionReport
         % is built from. The category tables above are the roll-up of
         % exactly these numbers (each cell here is credited inside the same
         % guard as its category counterpart in CenterOutTask.m), and they
-        % stay printed because they are the at-a-glance summary, but the
+        % stay printed because they are the at-a-glance summary -- but the
         % roll-up averages over the 4 lengths inside a category, which is
         % where this task's signal lives: the lengths nearest a category
         % boundary are the hard ones, and a category mean hides them
@@ -240,7 +241,7 @@ classdef SessionReport
         % The clock starts when the subject first holds in the centre, not
         % when the task launched: trial 1 can wait a long time for a subject
         % to engage, and that wait says nothing about how long the session
-        % took. From there it runs unbroken to the end of the trial loop;
+        % took. From there it runs unbroken to the end of the trial loop --
         % an early exit does not stop it, so that trial's time counts up to
         % the next trial's hold. Wall clock, so an operator pause is
         % included; teardown (saving, printing, closing the window) is not.
@@ -267,12 +268,12 @@ classdef SessionReport
         % REWARD  How much water the subject was given this session, split
         % into the two independent ways it can be delivered: the automatic
         % pulse on every correct trial (EP.REWARD), and the operator's manual
-        % 'r' key presses. Shared by BOTH engines; CenterOutTask.m and
+        % 'r' key presses. Shared by BOTH engines -- CenterOutTask.m and
         % CenterInTask.m have the same two reward paths and the same key, so
         % the accounting lives here once instead of being formatted twice.
         %
         % The seconds reported are VALVE-OPEN TIME actually commanded, summed
-        % from what Rewards.m returns per call, not (trials x nominal reward
+        % from what Rewards.m returns per call -- not (trials x nominal reward
         % time). That distinction matters: Rewards.m clamps each pulse to
         % 1-1000 ms for the Synapse gizmo and sends nothing at all when the
         % UDP link is absent, so a total recomputed from the GUI's Reward
@@ -281,7 +282,7 @@ classdef SessionReport
         %
         % mlPerSec is the rig's own valve calibration (orgParams.rewardMlPerSec,
         % mL delivered per second of valve-open time). It has no sensible
-        % default (it depends on line pressure and tubing) so when it is
+        % default -- it depends on line pressure and tubing -- so when it is
         % 0/empty this prints the valve time alone and says how to get mL,
         % rather than inventing a conversion factor.
         if nargin < 5 || isempty(mlPerSec), mlPerSec = 0; end
@@ -300,7 +301,7 @@ classdef SessionReport
                 'Estimated water:', '');
         end
         % A run that triggered rewards but delivered no valve time means every
-        % Rewards() call bailed out; the UDP link to Synapse was missing, so
+        % Rewards() call bailed out -- the UDP link to Synapse was missing, so
         % the subject worked for nothing. Worth shouting about: the trial log
         % will still be full of "correct" rows.
         if totalPulses > 0 && totalSec == 0
@@ -313,7 +314,7 @@ classdef SessionReport
         function confusion(confusionMat, sessionMode)
         % CONFUSION  ML-style confusion matrix: rows = true category,
         % columns = chosen category, tallied from every attempt that actually
-        % reached a target selection; see confusionMat in the main function
+        % reached a target selection -- see confusionMat in the main function
         % (early exits, which never chose a category, are excluded; those are
         % already reported separately as early-exit errors elsewhere). The
         % diagonal is correct trials; an off-diagonal cell (row t, col c) is a
@@ -322,7 +323,7 @@ classdef SessionReport
         %
         % A PURE 2-cat session (sessionMode == '2cat') collapses this to a 2x2
         % Short/Long matrix instead of padding a 3x3 with an always-zero Mid
-        % row/column, Mid never occurs there. 'alternate'/'interleaved'
+        % row/column -- Mid never occurs there. 'alternate'/'interleaved'
         % sessions genuinely draw Mid trials some of the time, so they keep the
         % full 3x3.
         if nargin < 2, sessionMode = ''; end
@@ -366,7 +367,7 @@ classdef SessionReport
         %
         % A PURE 2-cat session (sessionMode == '2cat') runs this over the
         % collapsed 2x2 Short/Long matrix (see SessionReport.confusion) instead
-        % of the full 3x3; category 3 (Mid) never occurs there, so there is no
+        % of the full 3x3 -- category 3 (Mid) never occurs there, so there is no
         % one-vs-rest table to report for it.
         %
         % CAVEAT, read before reporting these numbers. The classical SDT 2x2 table
@@ -377,7 +378,7 @@ classdef SessionReport
         % "the bar really was c" is the signal and the other two categories are
         % noise, giving three separate 2x2 tables. That is a descriptive
         % convenience borrowed from multiclass classification, NOT a generative
-        % model of the task, it discards the ordering of Short < Mid < Long and
+        % model of the task -- it discards the ordering of Short < Mid < Long and
         % treats a Short-for-Long confusion as equivalent to a Short-for-Mid one,
         % which for a graded length continuum it is not. The model that does
         % respect the ordering is the two-boundary (cumulative / indecision) model
@@ -394,7 +395,7 @@ classdef SessionReport
         %
         %   d'        = z(H) - z(F)     -- separation between the signal and noise
         %                                  distributions, in SD units. 0 = chance.
-        %   criterion = -(z(H) + z(F))/2; how conservative the observer is.
+        %   criterion = -(z(H) + z(F))/2 -- how conservative the observer is.
         %                                  0 = unbiased, >0 = reluctant to answer
         %                                  "this category", <0 = over-reports it.
         if nargin < 2, sessionMode = ''; end
@@ -493,7 +494,7 @@ classdef SessionReport
         function s = numRow(vals, fmt)
         % One table row's four numeric columns, NaN printed as a dash.
         % NaN here means "this combination produced no trial to average or
-        % divide by", which is a different statement from a measured 0,
+        % divide by", which is a different statement from a measured 0 --
         % and a dash cannot be mistaken for one the way '0.00' can.
         parts = cell(1, numel(vals));
         for j = 1:numel(vals)

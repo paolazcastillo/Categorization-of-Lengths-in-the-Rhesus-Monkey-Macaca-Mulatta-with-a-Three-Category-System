@@ -1,5 +1,6 @@
 classdef TaskEpoch
     % TASKEPOCH  Enumeration of behavioral task epochs (states).
+    %   Paola Castillo 2026-07-31
     %
     %   Replaces fragile magic constants (EP.CUE=4.5, EP.STIM_DELAY=13, etc.)
     %   with a named enumeration, so a stray number in a log or a comparison
@@ -8,7 +9,7 @@ classdef TaskEpoch
     %   Execution order within a trial (this is the real flow; see the
     %   numbering caveat below):
     %     ENTER_CENTER -> HOLD_START -> HOLD -> BAR -> [STIM_DELAY] ->
-    %     CUE -> [CUE_DELAY] -> REACTION -> MOVEMENT -> TARGET_HOLD ->
+    %     CUE -> [CUE_DELAY] -> DECISION_TIME -> MOVEMENT -> TARGET_HOLD ->
     %     REWARD -> SUCCESS_FB -> ITI -> BOOKKEEP
     %   with ERROR_FB replacing REWARD/SUCCESS_FB on a failed attempt, and
     %   the two bracketed epochs entered only when their delay is non-zero.
@@ -21,17 +22,17 @@ classdef TaskEpoch
     %   orgParams.delayStimToRule and orgParams.barToTargetDelay both
     %   default to 0. Raising either one during working-memory training
     %   activates the corresponding state. Do not delete those case blocks
-    %   as dead code; they are the working-memory manipulation.
+    %   as dead code -- they are the working-memory manipulation.
     %
     %   NUMBERING CAVEAT. The numeric Values are NOT in execution order:
     %   STIM_DELAY (14) runs between BAR (4) and CUE (5), and CUE_DELAY (15)
-    %   between CUE (5) and REACTION (6). They were appended at the end so
+    %   between CUE (5) and DECISION_TIME (6). They were appended at the end so
     %   that adding them would not renumber the epochs already written into
     %   existing trajectory_*.csv files. Consequence: do not infer trial
     %   order by sorting the Epoch column. Sort by the Time column instead,
     %   or map codes through the flow listed above. (Relational operators
-    %   are not defined on this class (it does not derive from a numeric
-    %   type) so an accidental `epoch < TaskEpoch.CUE` errors out rather
+    %   are not defined on this class -- it does not derive from a numeric
+    %   type -- so an accidental `epoch < TaskEpoch.CUE` errors out rather
     %   than quietly returning a wrong answer.)
     %
     %   Usage:
@@ -49,7 +50,7 @@ classdef TaskEpoch
         HOLD          (3)    % hold in centre, display bar if ready
         BAR           (4)    % bar visible, then optional stimulus-to-rule delay
         CUE           (5)    % cue visible (optional), then optional rule-to-target delay
-        REACTION      (6)    % cursor leaves centre (abort if too early)
+        DECISION_TIME (6)    % cursor leaves centre (abort if too early); was REACTION
         MOVEMENT      (7)    % cursor reaches target
         TARGET_HOLD   (8)    % brief hold inside correct target
         REWARD        (9)    % deliver reward

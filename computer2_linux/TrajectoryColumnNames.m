@@ -1,5 +1,6 @@
 function varNames = TrajectoryColumnNames(nCols, withMoveTime)
 % TRAJECTORYCOLUMNNAMES  CSV column names for a stripped trajectory matrix.
+%   Paola Castillo 2026-07-31
 %
 %   Single source of truth for the header that SaveTrajectory.m and
 %   SaveMovementTrajectory.m write. Call with the column count of the
@@ -11,7 +12,7 @@ function varNames = TrajectoryColumnNames(nCols, withMoveTime)
 %   'MoveTime_ms' column that ONLY the movement-only export carries: the
 %   per-record time measured from that trial's own movement onset (see
 %   SaveMovementTrajectory.m). Pass the base column count, NOT the widened
-%   one, i.e. TrajectoryColumnNames(size(m, 2) - 1, true), so both
+%   one -- i.e. TrajectoryColumnNames(size(m, 2) - 1, true) -- so both
 %   layouts keep a single definition here:
 %
 %     7 + MoveTime_ms  Date, Time_ms, X_px, Y_px, Epoch, Block,
@@ -25,10 +26,10 @@ function varNames = TrajectoryColumnNames(nCols, withMoveTime)
 %
 %   Time is MILLISECONDS SINCE THE FIRST TRIAL OF THE SESSION STARTED (see
 %   sessionT0 in CenterOutTask.m/CenterInTask.m's trial loop), not an
-%   absolute clock reading; row 1 of a fresh session is always ~0. Every
+%   absolute clock reading -- row 1 of a fresh session is always ~0. Every
 %   row is stamped the same way, at the instant its own cursor sample was
 %   read, no matter which write path in the trial loop produced it, and
-%   BOTH exports carry the column unmodified; the movement-only file
+%   BOTH exports carry the column unmodified -- the movement-only file
 %   appends MoveTime_ms rather than re-zeroing Time_ms. A given row's
 %   Time_ms is therefore identical in trajectory_*.csv and
 %   trajectory_movement_*.csv, which is what lets the two be joined.

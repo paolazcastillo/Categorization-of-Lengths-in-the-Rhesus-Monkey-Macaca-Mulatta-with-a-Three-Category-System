@@ -1,11 +1,12 @@
 function seq = BuildWeightedTargetSequence(numAttemptsNeeded, weights, blockSize, maxConsecSame)
 % BUILDWEIGHTEDTARGETSEQUENCE  Balanced pseudorandom direction sequence with
 % arbitrary per-direction proportions.
+%   Paola Castillo 2026-07-31
 %
 %   seq = BuildWeightedTargetSequence(numAttemptsNeeded, weights, blockSize, maxConsecSame)
 %
 %   weights       : [1 x nDir] relative proportion per direction (need not
-%                   sum to 1, normalized internally).
+%                   sum to 1 -- normalized internally).
 %   blockSize     : trials per balancing block. Pick a value such that
 %                   weights*blockSize are (near) integers for an exact
 %                   realized proportion, e.g. [0.35 0.15 0.35 0.15] with
@@ -14,7 +15,7 @@ function seq = BuildWeightedTargetSequence(numAttemptsNeeded, weights, blockSize
 %                   within a block and across block boundaries.
 %
 %   Uses the LARGEST-REMAINDER method to turn weights into exact integer
-%   per-block counts; proportions realized this way don't drift and don't
+%   per-block counts -- proportions realized this way don't drift and don't
 %   produce long uncontrolled runs the way i.i.d. sampling (rand < p) can.
 %   Returns a buffer 3x numAttemptsNeeded long, since a caller with a
 %   retry/correction procedure (a failed attempt repeats the same trial)

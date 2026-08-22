@@ -4,6 +4,7 @@ function str = FormatElapsedTime(elapsedSeconds)
 % the console's live "Session time" box (orgParams.handles.textSessionTime
 % -- see CenterConsole.m/InitTaskHandles.m/offrig_mocks/OffrigPlay.m for
 % where that handle comes from).
+% Paola Castillo 2026-07-31
 elapsedSeconds = max(elapsedSeconds, 0);
 totalSec = floor(elapsedSeconds);
 hh = floor(totalSec / 3600);
