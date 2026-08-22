@@ -1,10 +1,10 @@
-function data = readUDP(uObject, block)
+function data = ReadUDP(uObject, block)
 % READUDP  Read one UDP packet and decode it.
 %   Paola Castillo 2026-07-31
 %
 %   Packets from the task computer come in two shapes:
 %     - Assignment statements, e.g. "reward=1;rewDuration=50;" -- meant to
-%       be eval'd in the CALLER's workspace (Communication_CategTask_ACTX
+%       be eval'd in the CALLER's workspace (CommunicationCategTaskACTX
 %       does eval(tmpStr) on the returned string), NOT captured as a return
 %       value here. data = eval(pak) fails for these with "The expression
 %       to the left of the equals sign is not a valid target for an

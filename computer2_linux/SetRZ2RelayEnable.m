@@ -1,5 +1,5 @@
 function SetRZ2RelayEnable(enable, uSynapse)
-% SETRZ2RELAYENABLE  Tell Computer 1's Communication_CategTask_ACTX.m to
+% SETRZ2RELAYENABLE  Tell Computer 1's CommunicationCategTaskACTX.m to
 % start (enable=true) or stop (enable=false) the analog-joystick-over-UDP
 % relay (JoystickRelayToTask.m's InitJoystickRelay.m/StepJoystickRelay.m/
 % CleanupJoystickRelay.m) -- so it only runs while THIS machine actually has
@@ -9,7 +9,7 @@ function SetRZ2RelayEnable(enable, uSynapse)
 %
 % Wire protocol matches Rewards.m's convention: an evaluable assignment
 % string ("rz2RelayEnable=1;" or "rz2RelayEnable=0;") that
-% Communication_CategTask_ACTX.m's main loop eval()s the same way it
+% CommunicationCategTaskACTX.m's main loop eval()s the same way it
 % already does for reward/rewDuration.
 %
 % INPUT  enable    : true to start the relay, false to stop it

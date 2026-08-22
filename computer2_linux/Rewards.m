@@ -3,7 +3,7 @@ function deliveredSec = Rewards(amount, n, uSynapse)
 %   link to the Synapse computer (Computer 1).
 %   Paola Castillo 2026-07-31
 %
-%   Wire protocol matches what computer1_synapse/Communication_CategTask_ACTX.m
+%   Wire protocol matches what computer1_synapse/CommunicationCategTaskACTX.m
 %   already listens for: an evaluable string "reward=1;rewDuration=<ms>;"
 %   (see that file's header comment). Its main loop does
 %   `eval(tmpStr)` on whatever arrives, setting its local `reward`/
@@ -29,7 +29,7 @@ function deliveredSec = Rewards(amount, n, uSynapse)
 %          Callers that don't care can ignore it; every existing call site
 %          used to invoke this as a bare statement and still can.
 %
-%   Each pulse is followed by a short pause so Communication_CategTask_ACTX.m's
+%   Each pulse is followed by a short pause so CommunicationCategTaskACTX.m's
 %   polling loop has time to consume one message (reset rewDuration to 0)
 %   before the next one arrives -- mirroring the inter-pulse gap the
 %   parallel-port version of this function (WaitSecs(0.3) between pulses)

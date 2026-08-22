@@ -3,10 +3,10 @@ function state = StepJoystickRelay(state)
 % RELAY_PERIOD has actually elapsed since the last one -- otherwise
 % returns state unchanged immediately. Call this once per iteration of
 % whatever loop is driving it (JoystickRelayToTask.m's own standalone
-% while loop, or Communication_CategTask_ACTX.m's reward/marker loop);
+% while loop, or CommunicationCategTaskACTX.m's reward/marker loop);
 % the early-return makes it safe to call far more often than RELAY_HZ
 % without over-reading/over-sending, and -- critically for the
-% Communication_CategTask_ACTX.m case -- this function never calls
+% CommunicationCategTaskACTX.m case -- this function never calls
 % pause(), so it never blocks that loop's own, unrelated reward/marker
 % polling. All errors (read failures, recalibration failures) are caught
 % internally so a transient joystick-relay problem can't propagate up and
@@ -14,15 +14,15 @@ function state = StepJoystickRelay(state)
 % Paola Castillo 2026-07-31
 %
 % RECALIBRATION IS NON-BLOCKING (2026-07-30 fix): this used to call
-% calibrateActiveIndex.m directly for its periodic recalibration, which
+% CalibrateActiveIndex.m directly for its periodic recalibration, which
 % does pause(CALIBRATION_WAIT_SEC) TWICE (once per channel, ~0.3s total) --
 % directly contradicting the "never calls pause()" claim above. Because
-% Communication_CategTask_ACTX.m drives both this relay AND reward
+% CommunicationCategTaskACTX.m drives both this relay AND reward
 % delivery from the same single-threaded loop, that pause froze reward
 % delivery for up to ~0.3s whenever a target hit landed during a
 % recalibration window -- confirmed 2026-07-30 (intermittent reward lag,
 % only when the hit's timing collided with a recalibration). Fixed by
-% splitting the two buffer snapshots calibrateActiveIndex.m takes across
+% splitting the two buffer snapshots CalibrateActiveIndex.m takes across
 % TWO SEPARATE calls of this function instead of pausing between them
 % (see the recalibration block below): the read/send section further down
 % keeps using the OLD curIdxX/curIdxY while a recalibration is pending,
@@ -46,7 +46,7 @@ useWriteIdx = isfield(state, 'WRITE_IDX_TAG_X') && ~isempty(state.WRITE_IDX_TAG_
 % position (see ActiveIndexFromSnapshots.m for the technique) so the lag
 % N_READ's below-real-rate advance accumulates never grows past
 % RECAL_INTERVAL_SEC -- as a two-phase, non-blocking state machine instead
-% of calibrateActiveIndex.m's pause()-based version (see this file's
+% of CalibrateActiveIndex.m's pause()-based version (see this file's
 % header for why). Phase 1 takes the first snapshot of both channels and
 % returns immediately; phase 2, on a LATER call once CALIBRATION_WAIT_SEC
 % has actually elapsed, takes the second snapshot and resolves the new
@@ -112,7 +112,7 @@ elseif toc(state.calibStartRef) >= state.CALIBRATION_WAIT_SEC
         % or a lapped buffer, which is the failure worth refusing (see the
         % RECAL_TOL_* note in InitJoystickRelay.m). This also makes the
         % check independent of whether the driving loop achieved RELAY_HZ --
-        % Communication_CategTask_ACTX.m's loop often will not, and any
+        % CommunicationCategTaskACTX.m's loop often will not, and any
         % cursor-based budget would have to model that.
         elapsedHead = toc(state.tHeadRef);
         predHead    = mod(state.lastHeadIdx + state.WRITE_FS * elapsedHead, state.BUF_SIZE);

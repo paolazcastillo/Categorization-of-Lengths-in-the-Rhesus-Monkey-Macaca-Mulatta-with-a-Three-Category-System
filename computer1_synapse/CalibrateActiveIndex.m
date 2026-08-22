@@ -1,4 +1,4 @@
-function idx = calibrateActiveIndex(syn, gizmo, bufSize, waitSec)
+function idx = CalibrateActiveIndex(syn, gizmo, bufSize, waitSec)
 % CALIBRATEACTIVEINDEX  Finds where a circular SerStore buffer (gizmo's
 % 'data1' parameter) is CURRENTLY being written: two full-buffer
 % snapshots, waitSec apart -- see ActiveIndexFromSnapshots.m for the

@@ -1,5 +1,5 @@
-function Communication_CategTask_ACTX()
-% COMMUNICATION_CATEGTASK_ACTX  Bridges the Synapse computer to the task's
+function CommunicationCategTaskACTX()
+% COMMUNICATIONCATEGTASKACTX  Bridges the Synapse computer to the task's
 %   computer over UDP.
 %   Paola Castillo 2026-07-31 -- cleaned up from the lab's original
 %   Computer-1 Synapse bridge script (German Mendoza Martinez): removed
@@ -8,7 +8,7 @@ function Communication_CategTask_ACTX()
 %
 %   Computer-1-only (Windows): uses actxcontrol (ActiveX/COM) and the TDT
 %   SynapseAPI, neither of which exist on Linux/Computer 2. Launched by
-%   categTaskCommunication.m's "Run" button, which publishes the GUI
+%   CategTaskCommunication.m's "Run" button, which publishes the GUI
 %   handles as the global handles_glob before calling this function.
 %
 %   Reward messages arrive from the task computer as an evaluable string
@@ -144,7 +144,7 @@ try
         end
 
         % --- Read a message from the task computer, if any -----------------
-        tmpStr = readUDP(uTask);
+        tmpStr = ReadUDP(uTask);
         if ~isempty(tmpStr)
             % flushUDP() is not a MATLAB/Instrument Control Toolbox function
             % and was never defined anywhere in this codebase -- it crashed
@@ -236,7 +236,7 @@ catch me
     % 2026-07-10: "Error using matlab.ui.control.UIControl/set: Invalid or
     % deleted object" at this exact line masked whatever actually failed in
     % the try block above.
-    disp('--- Communication_CategTask_ACTX: error caught ---')
+    disp('--- CommunicationCategTaskACTX: error caught ---')
     disp(me.message)
     if ~isempty(me.stack)
         disp(['line ' num2str(me.stack(1).line)])

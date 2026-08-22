@@ -1,17 +1,17 @@
-function categTaskCommunication()
+function CategTaskCommunication()
 % CATEGTASKCOMMUNICATION  Launcher for the Synapse-side communication bridge.
 %   Paola Castillo 2026-07-31
 %
 %   Programmatic figure()/uicontrol() GUI (no .fig file needed) -- Computer 1
 %   only (Windows). The "Run" button adds the local 'libraries' folder and
 %   computer1_synapse/ to the path, publishes the GUI handles globally (as
-%   Communication_CategTask_ACTX expects), and calls
-%   computer1_synapse/Communication_CategTask_ACTX.m, the ActiveX routine
+%   CommunicationCategTaskACTX expects), and calls
+%   computer1_synapse/CommunicationCategTaskACTX.m, the ActiveX routine
 %   that bridges this (Synapse) computer to the task computer over UDP.
 %   No eye-tracking controls (removed per lab request); no database/NAS
 %   connection either.
 %
-% See also: computer1_synapse/Communication_CategTask_ACTX
+% See also: computer1_synapse/CommunicationCategTaskACTX
 
 fig = figure('Name', 'CategTask Communication', 'NumberTitle', 'off', ...
     'MenuBar', 'none', 'ToolBar', 'none', 'Resize', 'off', ...
@@ -45,12 +45,12 @@ end
 % ===========================================================================
 function pushbuttonRun_Callback(hObject, ~)
 % Put libraries and computer1_synapse/ on the path, publish the GUI handles
-% globally (Communication_CategTask_ACTX reads handles_glob, same contract
+% globally (CommunicationCategTaskACTX reads handles_glob, same contract
 % the old GUIDE version used), then run it.
 global handles_glob;
 ui = guidata(hObject);
 addpath(genpath('libraries'));
 addpath(fullfile(fileparts(mfilename('fullpath')), 'computer1_synapse'));
 handles_glob = ui;
-Communication_CategTask_ACTX();
+CommunicationCategTaskACTX();
 end

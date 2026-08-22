@@ -5,7 +5,7 @@ function state = InitJoystickRelay(syn)
 % driving it) and CleanupJoystickRelay.m. Split out from a single
 % self-contained script so the relay can run either standalone (see
 % JoystickRelayToTask.m) or interleaved inside another script's own loop
-% (Communication_CategTask_ACTX.m's reward/marker loop), sharing that
+% (CommunicationCategTaskACTX.m's reward/marker loop), sharing that
 % loop's single MATLAB process instead of needing a second MATLAB window.
 % Paola Castillo 2026-07-31
 %
@@ -34,9 +34,9 @@ function state = InitJoystickRelay(syn)
 % technique as the startup calibration below (see ActiveIndexFromSnapshots.m),
 % bounding worst-case lag to that interval instead of letting it grow
 % without limit -- as a non-blocking state machine there, NOT by calling
-% calibrateActiveIndex.m's blocking pause()-based version (see
+% CalibrateActiveIndex.m's blocking pause()-based version (see
 % StepJoystickRelay.m's header for why that distinction matters for
-% Communication_CategTask_ACTX.m's shared reward/marker loop).
+% CommunicationCategTaskACTX.m's shared reward/marker loop).
 %
 % RELAY_HZ tuning (2026-07-30): with N_READ=6, RELAY_HZ=150 only advances
 % at 900 Hz -- a 117 Hz deficit against the ~1017 Hz writer that visibly
@@ -87,7 +87,7 @@ function state = InitJoystickRelay(syn)
 %
 % INPUT
 %   syn : (optional) an already-open SynapseAPI('localhost') handle to
-%         reuse (e.g. Communication_CategTask_ACTX.m's own `syn`) instead
+%         reuse (e.g. CommunicationCategTaskACTX.m's own `syn`) instead
 %         of opening a second, redundant connection. Opens and mode-
 %         checks its own when omitted (standalone use).
 %
@@ -131,7 +131,7 @@ state.N_READ              = 6;
 % TIME-BASED read pacing (2026-08). The read cursor is advanced by
 % READ_FS * (wall-clock since the last read), NOT by a fixed N_READ per cycle.
 % The fixed-N_READ advance only kept pace when the driving loop actually hit
-% RELAY_HZ; Communication_CategTask_ACTX.m's shared reward/marker loop
+% RELAY_HZ; CommunicationCategTaskACTX.m's shared reward/marker loop
 % routinely runs slower, so the cursor advanced slower than the ~1017 Hz
 % writer and fell behind proportionally to how slow the loop was -- the main,
 % loop-rate-dependent source of the rz2adc lag. Pacing by elapsed time makes
@@ -163,7 +163,7 @@ state.MAX_READ_PER_CYCLE  = 4096;
 % turns out to be large on the rig's Synapse.
 %
 % (This used to also bound how often a ~2*CALIBRATION_WAIT_SEC stall hit
-% Communication_CategTask_ACTX.m's reward loop -- that stall is gone now
+% CommunicationCategTaskACTX.m's reward loop -- that stall is gone now
 % that StepJoystickRelay.m's periodic recalibration is non-blocking, see
 % that file's header, so this only trades lag ceiling vs. API load.)
 %
@@ -234,7 +234,7 @@ state.WRITE_FS = 1017;
 % lastHeadIdx at tHeadRef and moves at WRITE_FS, full stop -- so predicting
 % it is both simpler and immune to how far behind the cursor happens to be.
 % It is also immune to the driving loop missing RELAY_HZ, which
-% Communication_CategTask_ACTX.m's shared loop routinely does.
+% CommunicationCategTaskACTX.m's shared loop routinely does.
 %
 % FLOOR = 512 covers the peak estimate's own noise (~100-sample smoothing
 % window plus the ~150 samples written between the two snapshots) with
@@ -255,8 +255,8 @@ state.CALIBRATION_WAIT_SEC = 0.15;
 
 % --- Calibration: find each channel's active buffer index ---
 fprintf('Calibrating buffer indices (waiting ~%.2gs)...\n', 2 * state.CALIBRATION_WAIT_SEC);
-state.curIdxX = calibrateActiveIndex(syn, 'APICh1X', state.BUF_SIZE, state.CALIBRATION_WAIT_SEC);
-state.curIdxY = calibrateActiveIndex(syn, 'APICh2Y', state.BUF_SIZE, state.CALIBRATION_WAIT_SEC);
+state.curIdxX = CalibrateActiveIndex(syn, 'APICh1X', state.BUF_SIZE, state.CALIBRATION_WAIT_SEC);
+state.curIdxY = CalibrateActiveIndex(syn, 'APICh2Y', state.BUF_SIZE, state.CALIBRATION_WAIT_SEC);
 fprintf('Initial index -- X: %d  Y: %d\n', state.curIdxX, state.curIdxY);
 % Anchor for the write-head prediction the periodic recalibration is checked
 % against (see StepJoystickRelay.m): the head was here, now. Only an ACCEPTED
