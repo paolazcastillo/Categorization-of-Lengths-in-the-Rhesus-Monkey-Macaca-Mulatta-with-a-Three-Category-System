@@ -1,0 +1,328 @@
+===========================================================
+SESSION LOG -- CenterOutTask
+Run tag : sessROM_29-Aug-2026_14-18
+Started : 29-Aug-2026 14:18:57
+Full console transcript for this run, including the end-of-session report.
+===========================================================
+Trial log file created:      outputs/2026-08/2026-08-29/sessROM_29-Aug-2026_14-18/trial_data_sessROM_29-Aug-2026_14-18.csv
+
+======= SESSION BUDGET =======
+Stop condition : 12 presentation(s) per (bar length x position) combination
+                 errors consume their slot -- this session is exactly 576 trials
+Bar lengths    : 12 (4.00-7.80 deg VA)   Positions: 4
+Per block      : 48 trials = every length x 4 positions, i.e. 1 shot per combination
+Blocks         : 12 (error-free); retries and requeues add trials, not combinations
+Retries        : OFF (one attempt per stimulus)
+Requeue        : on
+Correct trials needed, per category:
+  Short :  4 length(s) x 4 positions x 12 =  192
+  Mid   :  4 length(s) x 4 positions x 12 =  192
+  Long  :  4 length(s) x 4 positions x 12 =  192
+  TOTAL :                                  576
+Remaining now  : 576 of 576 (whole session)
+==============================
+
+
+
+PTB-INFO: This is Psychtoolbox-3 for GNU/Linux X11, under Matlab 64-Bit (Version 3.0.15 - Build date: Jul 17 2019).
+PTB-INFO: Support status on this operating system release: Linux 4.15.0-142-generic Supported.
+PTB-INFO: Type 'PsychtoolboxVersion' for more detailed version information.
+PTB-INFO: Most parts of the Psychtoolbox distribution are licensed to you under terms of the MIT License, with
+PTB-INFO: some restrictions. See file 'License.txt' in the Psychtoolbox root folder for the exact licensing conditions.
+
+PTB-INFO: NVIDIA Corporation - GF119 [NVS 310] GPU found. Trying to establish low-level access...
+PTB-INFO: Connected to NVidia GF119 [NVS 310] GPU of NV-0d0 family with 2 display heads.
+
+
+PTB-INFO: OpenGL-Renderer is NVIDIA Corporation :: NVS 310/PCIe/SSE2 :: 4.4.0 NVIDIA 340.107
+PTB-INFO: VBL startline = 1080 , VBL Endline = 1124
+PTB-INFO: Measured monitor refresh interval from beamposition = 16.666081 ms [60.002107 Hz].
+PTB-INFO: Will use beamposition query for accurate Flip time stamping.
+PTB-INFO: Measured monitor refresh interval from VBLsync = 16.666040 ms [60.002255 Hz]. (50 valid samples taken, stddev=0.002613 ms.)
+PTB-INFO: Reported monitor refresh interval from operating system = 16.666667 ms [60.000000 Hz].
+PTB-INFO: Small deviations between reported values are normal and no reason to worry.
+Trial 1 (length 2, position Left_180) exhausted 1 attempts -- requeued at slot 577 for one clean retry.
+Trial 2 (length 12, position Down_270) exhausted 1 attempts -- requeued at slot 578 for one clean retry.
+Trial 5 (length 5, position Right_0) exhausted 1 attempts -- requeued at slot 579 for one clean retry.
+Trial 7 (length 9, position Right_0) exhausted 1 attempts -- requeued at slot 580 for one clean retry.
+Trial 14 (length 9, position Up_90) exhausted 1 attempts -- requeued at slot 581 for one clean retry.
+Trial 20 (length 9, position Left_180) exhausted 1 attempts -- requeued at slot 582 for one clean retry.
+Trial 23 (length 9, position Down_270) exhausted 1 attempts -- requeued at slot 583 for one clean retry.
+Trial 24 (length 8, position Left_180) exhausted 1 attempts -- requeued at slot 584 for one clean retry.
+Trial 32 (length 10, position Right_0) exhausted 1 attempts -- requeued at slot 585 for one clean retry.
+Trial 34 (length 5, position Down_270) exhausted 1 attempts -- requeued at slot 586 for one clean retry.
+Trial 42 (length 10, position Left_180) exhausted 1 attempts -- requeued at slot 587 for one clean retry.
+Trial 44 (length 10, position Down_270) exhausted 1 attempts -- requeued at slot 588 for one clean retry.
+Trial 47 (length 5, position Left_180) exhausted 1 attempts -- requeued at slot 589 for one clean retry.
+Trial 49 (length 9, position Up_90) exhausted 1 attempts -- requeued at slot 590 for one clean retry.
+Trial 51 (length 4, position Up_90) exhausted 1 attempts -- requeued at slot 591 for one clean retry.
+Trial 53 (length 10, position Left_180) exhausted 1 attempts -- requeued at slot 592 for one clean retry.
+Trial 60 (length 9, position Right_0) exhausted 1 attempts -- requeued at slot 593 for one clean retry.
+Trial 61 (length 5, position Up_90) exhausted 1 attempts -- requeued at slot 594 for one clean retry.
+Trial 63 (length 5, position Right_0) exhausted 1 attempts -- requeued at slot 595 for one clean retry.
+Trial 64 (length 8, position Up_90) exhausted 1 attempts -- requeued at slot 596 for one clean retry.
+Trial 65 (length 9, position Down_270) exhausted 1 attempts -- requeued at slot 597 for one clean retry.
+Trial 69 (length 5, position Left_180) exhausted 1 attempts -- requeued at slot 598 for one clean retry.
+Trial 70 (length 4, position Right_0) exhausted 1 attempts -- requeued at slot 599 for one clean retry.
+Trial 71 (length 3, position Up_90) exhausted 1 attempts -- requeued at slot 600 for one clean retry.
+Trial 72 (length 2, position Down_270) exhausted 1 attempts -- requeued at slot 601 for one clean retry.
+Trial 75 (length 9, position Left_180) exhausted 1 attempts -- requeued at slot 602 for one clean retry.
+Trial 93 (length 5, position Down_270) exhausted 1 attempts -- requeued at slot 603 for one clean retry.
+Trial 97 (length 5, position Left_180) exhausted 1 attempts -- requeued at slot 604 for one clean retry.
+Trial 100 (length 5, position Right_0) exhausted 1 attempts -- requeued at slot 605 for one clean retry.
+Trial 101 (length 4, position Up_90) exhausted 1 attempts -- requeued at slot 606 for one clean retry.
+Trial 110 (length 9, position Right_0) exhausted 1 attempts -- requeued at slot 607 for one clean retry.
+Trial 112 (length 4, position Down_270) exhausted 1 attempts -- requeued at slot 608 for one clean retry.
+Trial 113 (length 6, position Up_90) exhausted 1 attempts -- requeued at slot 609 for one clean retry.
+Trial 114 (length 4, position Left_180) exhausted 1 attempts -- requeued at slot 610 for one clean retry.
+Trial 121 (length 9, position Down_270) exhausted 1 attempts -- requeued at slot 611 for one clean retry.
+Trial 122 (length 8, position Down_270) exhausted 1 attempts -- requeued at slot 612 for one clean retry.
+Trial 137 (length 10, position Left_180) exhausted 1 attempts -- requeued at slot 613 for one clean retry.
+Trial 138 (length 6, position Right_0) exhausted 1 attempts -- requeued at slot 614 for one clean retry.
+Trial 140 (length 3, position Left_180) exhausted 1 attempts -- requeued at slot 615 for one clean retry.
+Trial 148 (length 5, position Up_90) exhausted 1 attempts -- requeued at slot 616 for one clean retry.
+Trial 150 (length 3, position Left_180) exhausted 1 attempts -- requeued at slot 617 for one clean retry.
+Trial 152 (length 10, position Up_90) exhausted 1 attempts -- requeued at slot 618 for one clean retry.
+Trial 164 (length 6, position Up_90) exhausted 1 attempts -- requeued at slot 619 for one clean retry.
+Trial 170 (length 5, position Left_180) exhausted 1 attempts -- requeued at slot 620 for one clean retry.
+Trial 179 (length 5, position Down_270) exhausted 1 attempts -- requeued at slot 621 for one clean retry.
+Trial 180 (length 3, position Right_0) exhausted 1 attempts -- requeued at slot 622 for one clean retry.
+Trial 185 (length 4, position Right_0) exhausted 1 attempts -- requeued at slot 623 for one clean retry.
+Trial 193 (length 6, position Left_180) exhausted 1 attempts -- requeued at slot 624 for one clean retry.
+Trial 196 (length 9, position Right_0) exhausted 1 attempts -- requeued at slot 625 for one clean retry.
+Trial 216 (length 9, position Down_270) exhausted 1 attempts -- requeued at slot 626 for one clean retry.
+Trial 225 (length 3, position Up_90) exhausted 1 attempts -- requeued at slot 627 for one clean retry.
+Trial 231 (length 10, position Right_0) exhausted 1 attempts -- requeued at slot 628 for one clean retry.
+Trial 232 (length 5, position Left_180) exhausted 1 attempts -- requeued at slot 629 for one clean retry.
+Trial 235 (length 5, position Right_0) exhausted 1 attempts -- requeued at slot 630 for one clean retry.
+Trial 236 (length 4, position Up_90) exhausted 1 attempts -- requeued at slot 631 for one clean retry.
+Trial 240 (length 4, position Left_180) exhausted 1 attempts -- requeued at slot 632 for one clean retry.
+Trial 254 (length 8, position Left_180) exhausted 1 attempts -- requeued at slot 633 for one clean retry.
+Trial 258 (length 4, position Down_270) exhausted 1 attempts -- requeued at slot 634 for one clean retry.
+Trial 274 (length 5, position Down_270) exhausted 1 attempts -- requeued at slot 635 for one clean retry.
+Trial 279 (length 4, position Up_90) exhausted 1 attempts -- requeued at slot 636 for one clean retry.
+Trial 283 (length 7, position Left_180) exhausted 1 attempts -- requeued at slot 637 for one clean retry.
+Trial 287 (length 9, position Left_180) exhausted 1 attempts -- requeued at slot 638 for one clean retry.
+Trial 288 (length 6, position Down_270) exhausted 1 attempts -- requeued at slot 639 for one clean retry.
+Trial 290 (length 8, position Down_270) exhausted 1 attempts -- requeued at slot 640 for one clean retry.
+Trial 291 (length 1, position Left_180) exhausted 1 attempts -- requeued at slot 641 for one clean retry.
+Trial 292 (length 4, position Down_270) exhausted 1 attempts -- requeued at slot 642 for one clean retry.
+Trial 305 (length 6, position Up_90) exhausted 1 attempts -- requeued at slot 643 for one clean retry.
+Trial 307 (length 6, position Right_0) exhausted 1 attempts -- requeued at slot 644 for one clean retry.
+Trial 311 (length 1, position Right_0) exhausted 1 attempts -- requeued at slot 645 for one clean retry.
+Trial 312 (length 3, position Left_180) exhausted 1 attempts -- requeued at slot 646 for one clean retry.
+Trial 313 (length 9, position Down_270) exhausted 1 attempts -- requeued at slot 647 for one clean retry.
+Trial 314 (length 4, position Up_90) exhausted 1 attempts -- requeued at slot 648 for one clean retry.
+Trial 317 (length 8, position Left_180) exhausted 1 attempts -- requeued at slot 649 for one clean retry.
+Trial 318 (length 12, position Up_90) exhausted 1 attempts -- requeued at slot 650 for one clean retry.
+Trial 319 (length 7, position Up_90) exhausted 1 attempts -- requeued at slot 651 for one clean retry.
+Trial 320 (length 11, position Right_0) exhausted 1 attempts -- requeued at slot 652 for one clean retry.
+
+
+WARNING: This session of your experiment was run by you with the setting Screen('Preference', 'SkipSyncTests', 1).
+WARNING: This means that some internal self-tests and calibrations were skipped. Your stimulus presentation timing
+WARNING: may have been wrong. This is fine for development and debugging of your experiment, but for running the real
+WARNING: study, please make sure to set Screen('Preference', 'SkipSyncTests', 0) for maximum accuracy and reliability.
+
+Session data saved to:  outputs/2026-08/2026-08-29/sessROM_29-Aug-2026_14-18/perf_sessROM_29-Aug-2026_14-18.mat
+CSV exported to:        outputs/2026-08/2026-08-29/sessROM_29-Aug-2026_14-18/session_data_sessROM_29-Aug-2026_14-18.csv
+Trajectory saved to: outputs/2026-08/2026-08-29/sessROM_29-Aug-2026_14-18/trajectory_sessROM_29-Aug-2026_14-18.mat (217772 samples)
+Trajectory CSV exported to: outputs/2026-08/2026-08-29/sessROM_29-Aug-2026_14-18/trajectory_sessROM_29-Aug-2026_14-18.csv (217772 samples)
+Movement-only trajectory saved to: outputs/2026-08/2026-08-29/sessROM_29-Aug-2026_14-18/trajectory_movement_sessROM_29-Aug-2026_14-18.mat (37440 samples)
+Movement-only trajectory exported to: outputs/2026-08/2026-08-29/sessROM_29-Aug-2026_14-18/trajectory_movement_sessROM_29-Aug-2026_14-18.csv (37440 samples)
+
+======= PER-BLOCK SUMMARY (Level 1) =======
+Block  Mix(2/3)   Total   Good    %Corr  EarlyEx  WrongTg  HoldBrk   By category (good/total)
+1       0/48         48     35    72.9%        1       12        0   Short 15/16  Mid 12/16  Long 8/16  
+2       0/48         48     34    70.8%        1       13        0   Short 12/16  Mid 11/16  Long 11/16  
+3       0/48         48     36    75.0%        1       11        0   Short 12/16  Mid 11/16  Long 13/16  
+4       0/48         48     40    83.3%        0        8        0   Short 13/16  Mid 12/16  Long 15/16  
+5       0/48         48     39    81.2%        0        9        0   Short 13/16  Mid 13/16  Long 13/16  
+6       0/48         48     41    85.4%        0        7        0   Short 14/16  Mid 12/16  Long 15/16  
+7       0/37         37     24    64.9%        3       10        0   Short 9/14  Mid 8/13  Long 7/10  
+============================================
+
+======= SESSION SUMMARY (Level 2 -- all blocks combined) ==========
+Total Trials:        325
+Good Trials:         249
+Overall Performance: 76.62%
+
+--- Error Breakdown (ErrorType in trial_data_*.csv) ---
+1 Early exit / timeout:     6 (  1.85%)  never reached the correct target
+2 Wrong target:            70 ( 21.54%)  entered a target of another category
+3 Hold-break:               0 (  0.00%)  reached the CORRECT target, released
+                                         before completing the hold (pre-training only)
+
+--- Category Selection Performance ---
+Trials that resolved as a category choice: 319
+Category selection accuracy: 78.06%
+=============================================
+
+--- SHORT GROUP trials: 110 total, 88 correct (80.0%)
+--- MID   GROUP trials: 109 total, 79 correct (72.5%)
+--- LONG  GROUP trials: 106 total, 82 correct (77.4%)
+
+--- Per (length x position) quota (min 12 correct each) ---
+                       R   U   L   D
+   1. 4.0000 deg VA:   6   7   6   7  <-- short
+   2. 4.1000 deg VA:   7   7   6   6  <-- short
+   3. 4.7000 deg VA:   6   5   4   6  <-- short
+   4. 5.0000 deg VA:   4   2   5   4  <-- short
+   5. 5.1000 deg VA:   3   5   2   3  <-- short
+   6. 5.7000 deg VA:   5   4   6   5  <-- short
+   7. 6.0000 deg VA:   7   6   5   6  <-- short
+   8. 6.1000 deg VA:   7   6   4   5  <-- short
+   9. 6.7000 deg VA:   2   4   3   2  <-- short
+  10. 7.0000 deg VA:   5   5   4   6  <-- short
+  11. 7.6000 deg VA:   6   7   7   6  <-- short
+  12. 7.8000 deg VA:   7   6   7   5  <-- short
+
+--- Same, split by category-count (2-cat / 3-cat) --- (2cat + 3cat = total above)
+                       2-cat                3-cat          
+                         R   U   L   D        R   U   L   D
+   1. 4.0000 deg VA:     0   0   0   0        6   7   6   7
+   2. 4.1000 deg VA:     0   0   0   0        7   7   6   6
+   3. 4.7000 deg VA:     0   0   0   0        6   5   4   6
+   4. 5.0000 deg VA:     0   0   0   0        4   2   5   4
+   5. 5.1000 deg VA:     0   0   0   0        3   5   2   3
+   6. 5.7000 deg VA:     0   0   0   0        5   4   6   5
+   7. 6.0000 deg VA:     0   0   0   0        7   6   5   6
+   8. 6.1000 deg VA:     0   0   0   0        7   6   4   5
+   9. 6.7000 deg VA:     0   0   0   0        2   4   3   2
+  10. 7.0000 deg VA:     0   0   0   0        5   5   4   6
+  11. 7.6000 deg VA:     0   0   0   0        6   7   7   6
+  12. 7.8000 deg VA:     0   0   0   0        7   6   7   5
+
+--- Timing definitions (as written to trial_data_*.csv) ---
+  DecisionTime_s  = target-onset  -> leave-center
+  ExecutionTime_s = leave-center  -> reach-target
+  ReactionTime_s  = DecisionTime + ExecutionTime  (target-onset -> reach-target)
+  The matrices below report the mean DECISION time.
+
+--- Performance Matrix --- (rows 1=Short 2=Mid 3=Long | cols Right Up Left Down)
+
+Mean Decision Time (s) [target-onset -> leave-center]:
+             Right        Up      Left      Down
+Short:       0.429     0.422     0.297     0.298
+Mid:         0.398     0.355     0.334     0.318
+Long:        0.335     0.374     0.345     0.278
+
+Percentage Correct (%):
+             Right        Up      Left      Down
+Short:       88.46     75.00     80.77     88.46
+Mid:         78.57     77.78     62.96     76.00
+Long:        74.07     84.62     77.78     73.08
+
+Trial Counts:
+             Right        Up      Left      Down
+Short:          26        28        26        26
+Mid:            28        27        27        25
+Long:           27        26        27        26
+
+--- Same, per (bar length x position) --- the 48 combinations this session ran
+
+Mean Decision Time (s) [target-onset -> leave-center]:
+                           Right        Up      Left      Down
+   1. 4.0000 deg Short:    0.406     0.420     0.259     0.298
+   2. 4.1000 deg Short:    0.429     0.432     0.306     0.292
+   3. 4.7000 deg Short:    0.454     0.411     0.334     0.284
+   4. 5.0000 deg Short:    0.426     0.426     0.301     0.326
+   5. 5.1000 deg Mid  :    0.356     0.318     0.376     0.340
+   6. 5.7000 deg Mid  :    0.471     0.384     0.367     0.287
+   7. 6.0000 deg Mid  :    0.396     0.379     0.318     0.326
+   8. 6.1000 deg Mid  :    0.365     0.342     0.284     0.327
+   9. 6.7000 deg Long :    0.376     0.322     0.473     0.301
+  10. 7.0000 deg Long :    0.331     0.391     0.363     0.265
+  11. 7.6000 deg Long :    0.345     0.415     0.310     0.281
+  12. 7.8000 deg Long :    0.318     0.348     0.315     0.281
+
+Percentage Correct (%):
+                           Right        Up      Left      Down
+   1. 4.0000 deg Short:   100.00    100.00    100.00    100.00
+   2. 4.1000 deg Short:   100.00    100.00    100.00    100.00
+   3. 4.7000 deg Short:    85.71     71.43     57.14    100.00
+   4. 5.0000 deg Short:    66.67     28.57     71.43     57.14
+   5. 5.1000 deg Mid  :    42.86     71.43     28.57     42.86
+   6. 5.7000 deg Mid  :    71.43     66.67     85.71     83.33
+   7. 6.0000 deg Mid  :   100.00     85.71     83.33    100.00
+   8. 6.1000 deg Mid  :   100.00     85.71     57.14     83.33
+   9. 6.7000 deg Long :    33.33     66.67     50.00     28.57
+  10. 7.0000 deg Long :    71.43     83.33     57.14     85.71
+  11. 7.6000 deg Long :    85.71    100.00    100.00    100.00
+  12. 7.8000 deg Long :   100.00     85.71    100.00     83.33
+
+Trial Counts (correct / total):
+                           Right        Up      Left      Down
+   1. 4.0000 deg Short:      6/6       7/7       6/6       7/7
+   2. 4.1000 deg Short:      7/7       7/7       6/6       6/6
+   3. 4.7000 deg Short:      6/7       5/7       4/7       6/6
+   4. 5.0000 deg Short:      4/6       2/7       5/7       4/7
+   5. 5.1000 deg Mid  :      3/7       5/7       2/7       3/7
+   6. 5.7000 deg Mid  :      5/7       4/6       6/7       5/6
+   7. 6.0000 deg Mid  :      7/7       6/7       5/6       6/6
+   8. 6.1000 deg Mid  :      7/7       6/7       4/7       5/6
+   9. 6.7000 deg Long :      2/6       4/6       3/6       2/7
+  10. 7.0000 deg Long :      5/7       5/6       4/7       6/7
+  11. 7.6000 deg Long :      6/7       7/7       7/7       6/6
+  12. 7.8000 deg Long :      7/7       6/7       7/7       5/6
+
+
+======= REWARD DELIVERED =======
+Correct trials:             249 pulse(s)     49.800 s
+Manual (r key):               0 pulse(s)      0.000 s
+TOTAL valve-open time:      249 pulse(s)     49.800 s
+Estimated water:             36.85 mL   (calibration 0.740 mL/s)
+================================
+
+======= SESSION TIME =======
+Total          : 00:39:22  (2362.9 s, from the first hold to the end of the last trial)
+Per trial      : 7.3 s over 325 trial(s)
+
+======= CONFUSION MATRIX (true category x chosen category) =======
+                   Short       Mid      Long     Total    Recall
+True Short            88        13         5       106     83.0%
+True Mid              15        79        13       107     73.8%
+True Long              0        24        82       106     77.4%
+  Column total       103       116       100
+
+Overall accuracy (of trials that reached a selection): 78.1%  (249/319)
+====================================================================
+
+======= SIGNAL DETECTION (one-vs-rest per category) =======
+
+--- Signal = Short ---
+                     Resp YES    Resp NO    Total
+Stim Short                 88         18      106
+Stim other                 15        198      213
+             Total        103        216      319
+  Hit rate 0.827   FA rate 0.072   (log-linear corrected)
+  d' = 2.401   criterion = +0.258
+  Precision 0.854   Recall 0.830   F1 0.842
+
+--- Signal = Mid ---
+                     Resp YES    Resp NO    Total
+Stim Mid                   79         28      107
+Stim other                 37        175      212
+             Total        116        203      319
+  Hit rate 0.736   FA rate 0.176   (log-linear corrected)
+  d' = 1.562   criterion = +0.150
+  Precision 0.681   Recall 0.738   F1 0.709
+
+--- Signal = Long ---
+                     Resp YES    Resp NO    Total
+Stim Long                  82         24      106
+Stim other                 18        195      213
+             Total        100        219      319
+  Hit rate 0.771   FA rate 0.086   (log-linear corrected)
+  d' = 2.105   criterion = +0.310
+  Precision 0.820   Recall 0.774   F1 0.796
+
+--- Summary across categories ---
+  Category         d'    criterion
+     Short      2.401       +0.258
+       Mid      1.562       +0.150
+      Long      2.105       +0.310
+==========================================================
+
+Session report saved to: outputs/2026-08/2026-08-29/sessROM_29-Aug-2026_14-18/session_report_sessROM_29-Aug-2026_14-18.txt
+RZ2 link: DIAGNOSTIC -- CleanupRZ2Joystick called with rz2=double, so nothing to report.
