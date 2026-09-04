@@ -144,13 +144,14 @@ end
 u.UserData = struct( ...
     'lastX', 0, 'lastY', 0, ...
     'lastDrainTime', GetSecs(), ...
-    'batch', zeros(0, 3), ...   % accumulated, not-yet-logged [time, vx, vy] rows
-    ... % Time base (see ReadRZ2Joystick.m): the local clock reading paired
-    ... % with the relay sample index observed at that moment. Every later
-    ... % sample's time is derived from its own index against this pair, so a
-    ... % backlogged sample gets the time it was CAPTURED, not the time it was
-    ... % finally read. NaN until the first indexed sample arrives.
-    'idxAnchor', nan, 'tAnchor', nan, 'lastIdx', nan, ...
+    'batch', zeros(0, 4), ...   % accumulated, not-yet-logged [time, vx, vy, absIdx] rows
+    ... % lastIdx is the newest index seen, kept only to count gaps across
+    ... % the seam between drains (see ReadRZ2Joystick.m). The time base
+    ... % itself no longer lives here: the fixed (idxAnchor, tAnchor) pair
+    ... % that used to define it was replaced by rz2.clock (RZ2ClockMap),
+    ... % because a pair plus a constant rate cannot absorb an error in that
+    ... % rate -- it integrates it. NaN until the first indexed sample.
+    'lastIdx', nan, ...
     ... % Link health, reported by CleanupRZ2Joystick.m at teardown.
     'nSamples', 0, ...        % samples handed to the trajectory
     'nSkipped', 0, ...        % gaps in the index (lost datagrams + recalibration jumps)
@@ -168,19 +169,20 @@ rz2 = struct( ...
     'scaleX',    OrgGet(orgParams, 'rz2ScaleX',  1), ...
     'scaleY',    OrgGet(orgParams, 'rz2ScaleY',  1), ...  % JoystickRelayToTask.m sends real JoyY (APICh2Y/Adc2)
     'offsetY',   OrgGet(orgParams, 'rz2OffsetY', 0), ...
-    ... % The ADC's REAL sample rate, which is what an index difference has to
-    ... % be divided by to become elapsed time.
-    ... % CORRECTED 2026-08-25: 1017 -> 952 Hz. The old 1017 was inferred from
-    ... % the storage rate JoyX/JoyY and NPro2 display in Synapse -- but those
-    ... % are DIFFERENT gizmos that do their own decimation. APICh1X/APICh2Y
-    ... % run APIStreamer1Ch.rcx off the PZ5's ~25 kHz stream through its own
-    ... % 'downsample' divider (26 on this rig), and that is what actually
-    ... % sets THIS buffer's write rate. Measured directly, for the first
-    ... % time, by polling the newly-exposed SerStore write-index tag for 30 s:
-    ... % 952.11 Hz. The old value was stretching every trajectory timestamp
-    ... % by ~7%. Re-measure the same way if 'downsample' or the PZ5 rate
-    ... % ever change -- do not infer it from another gizmo's display again.
-    'sampleRateHz', OrgGet(orgParams, 'rz2SampleRateHz', 952), ...
+    ... % SEED for the clock map below, and the centre of its slope clamp.
+    ... % No longer the divisor that converts index to time on its own: see
+    ... % RZ2ClockMap.m and the 'clock' field further down.
+    ... % CORRECTED 2026-09-04, 952 -> 939.0024 Hz. 952.11 came from polling
+    ... % the SerStore write index for 30 s, but session sessPX-309 measured
+    ... % the RZ2 stamps falling behind GetSecs at 13.69 ms/s (r = 0.9998),
+    ... % which puts the true write rate at 952/1.01369 = 939.1 Hz. That is
+    ... % 24414.0625/26 = 939.0024 Hz to within 0.015%: the standard TDT base
+    ... % rate through APIStreamer1Ch.rcx's own 'downsample' divider (26 on
+    ... % this rig). The old value implied a base of 24755 Hz, which is not a
+    ... % TDT rate. Confirm on the rig with getSamplingRates plus the live
+    ... % 'downsample' value; with the clock map in place a wrong seed now
+    ... % costs a warm-up, not a whole session.
+    'sampleRateHz', OrgGet(orgParams, 'rz2SampleRateHz', 939.0024), ...
     ... % Ceiling on samples drained per frame -- see ReadRZ2Joystick.m.
     ... % Raised 64 -> 256 (earlier fix): a normal frame plus any post-
     ... % recalibration burst (~1014/s => ~17/frame, up to ~70 right after a
@@ -209,5 +211,18 @@ rz2 = struct( ...
     ... % enough to catch a link that is genuinely falling behind. Config, so
     ... % it lives here rather than on UserData, which holds only the mutable
     ... % per-drain state.
-    'capWarnFrames', OrgGet(orgParams, 'rz2CapWarnFrames', 60));
+    'capWarnFrames', OrgGet(orgParams, 'rz2CapWarnFrames', 60), ...
+    ... % The index -> GetSecs map itself. A handle object, so it lives in
+    ... % this plain struct and still mutates in place on every drain, the
+    ... % same trick u.UserData uses above. Window length is in
+    ... % observations, one per drain: 600 is ~10 s at 60 fps, long enough
+    ... % that the slope is well conditioned and short enough to follow a
+    ... % real change in the link. maxRateDev bounds how far the estimate
+    ... % may travel from the seed, so a corrupt stretch of indices cannot
+    ... % rewrite the time base wholesale -- it clamps, the residual skew
+    ... % grows, and ClockSkewMonitor stops the session instead.
+    'clock', RZ2ClockMap( ...
+        OrgGet(orgParams, 'rz2SampleRateHz', 939.0024), ...
+        OrgGet(orgParams, 'rz2ClockWindow', 600), ...
+        OrgGet(orgParams, 'rz2ClockMaxRateDev', 0.10)));
 end

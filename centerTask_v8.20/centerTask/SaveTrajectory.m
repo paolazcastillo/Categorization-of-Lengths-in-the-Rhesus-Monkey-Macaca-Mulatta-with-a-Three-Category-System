@@ -73,6 +73,17 @@ function SaveTrajectory(trajBuf, trajN, outDir, runTag, sessionDate, saveAsMat, 
         return;
     end
 
+    % Time_ms MUST be non-decreasing. It is the assumption every offline
+    % velocity, every MoveTime_ms and every trial-window cut is built on,
+    % and it was silently false for a whole session before anything checked
+    % it: two time bases were sharing this one column, so rows stamped from
+    % the wall clock sat between index-derived neighbours and the column
+    % stepped backwards 506 times, by up to 3.17 s. Reported, not repaired
+    % -- reordering or clamping here would hide a live instrumentation fault
+    % behind a tidy-looking file, which is the failure mode this whole
+    % check exists to end. The file is still written.
+    ReportTimeMonotonicity(trajectory(:, 1), 'trajectory');
+
     % Save .mat file
     if saveAsMat
         try

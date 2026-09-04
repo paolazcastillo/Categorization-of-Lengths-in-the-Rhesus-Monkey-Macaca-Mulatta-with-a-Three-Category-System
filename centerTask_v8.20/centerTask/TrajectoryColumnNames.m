@@ -3,7 +3,7 @@ function varNames = TrajectoryColumnNames(nCols, withMoveTime)
 %
 %   Single source of truth for the header that SaveTrajectory.m and
 %   SaveMovementTrajectory.m write. Call with the column count of the
-%   already-stripped matrix (TrialNum removed, so 7 or 5 columns):
+%   already-stripped matrix (TrialNum removed, so 8 or 6 columns):
 %
 %     varNames = TrajectoryColumnNames(size(trajectory, 2));
 %
@@ -14,14 +14,25 @@ function varNames = TrajectoryColumnNames(nCols, withMoveTime)
 %   one -- i.e. TrajectoryColumnNames(size(m, 2) - 1, true) -- so both
 %   layouts keep a single definition here:
 %
-%     7 + MoveTime_ms  Date, Time_ms, X_px, Y_px, Epoch, Block,
-%                      TrialNumInBlock, Attempt, MoveTime_ms
+%     8 + MoveTime_ms  Date, Time_ms, X_px, Y_px, Epoch, Block,
+%                      TrialNumInBlock, Attempt, RZ2Idx, MoveTime_ms
 %
 %   Supported layouts (column count AFTER removing the TrialNum column):
-%     7  CenterOutTask.m  (N x 8 raw buffer -> N x 7 stripped):
-%          Date, Time_ms, X_px, Y_px, Epoch, Block, TrialNumInBlock, Attempt
-%     5  CenterInTask.m   (N x 6 raw buffer -> N x 5 stripped):
-%          Date, Time_ms, X_px, Y_px, Epoch, Attempt
+%     8  CenterOutTask.m  (N x 9 raw buffer -> N x 8 stripped):
+%          Date, Time_ms, X_px, Y_px, Epoch, Block, TrialNumInBlock,
+%          Attempt, RZ2Idx
+%     6  CenterInTask.m   (N x 7 raw buffer -> N x 6 stripped):
+%          Date, Time_ms, X_px, Y_px, Epoch, Attempt, RZ2Idx
+%
+%   RZ2Idx (2026-09-04) is the relay's absolute sample index on the rz2adc
+%   path and NaN everywhere else, which makes it the row's PROVENANCE, not
+%   an ornament: NaN says this row's Time_ms was estimated rather than
+%   derived from an index. Before it existed, a wall-clock-stamped row and
+%   an index-derived one were indistinguishable in the export, which is how
+%   two different time bases coexisted in one Time_ms column for a whole
+%   session without anything downstream being able to notice. It also lets
+%   an offline analysis re-derive timing under a different sample rate.
+%   The 7- and 5-column layouts are sessions written before that date.
 %
 %   Time is MILLISECONDS SINCE THE FIRST TRIAL OF THE SESSION STARTED (see
 %   sessionT0 in CenterOutTask.m/CenterInTask.m's trial loop), not an
@@ -39,15 +50,22 @@ if nargin < 2 || isempty(withMoveTime)
     withMoveTime = false;
 end
 switch nCols
+    case 8
+        varNames = {'Date', 'Time_ms', 'X_px', 'Y_px', 'Epoch', 'Block', 'TrialNumInBlock', 'Attempt', 'RZ2Idx'};
+    case 6
+        varNames = {'Date', 'Time_ms', 'X_px', 'Y_px', 'Epoch', 'Attempt', 'RZ2Idx'};
     case 7
+        % Pre-2026-09-04 CenterOutTask layout, no RZ2Idx column.
         varNames = {'Date', 'Time_ms', 'X_px', 'Y_px', 'Epoch', 'Block', 'TrialNumInBlock', 'Attempt'};
     case 5
+        % Pre-2026-09-04 CenterInTask layout, no RZ2Idx column.
         varNames = {'Date', 'Time_ms', 'X_px', 'Y_px', 'Epoch', 'Attempt'};
     otherwise
         error('TrajectoryColumnNames:unknownLayout', ...
             ['Unrecognized trajectory column count (%d after stripping TrialNum). ' ...
-            'Expected 5 (CenterInTask, 6-col raw buffer) or ' ...
-            '7 (CenterOutTask, 8-col raw buffer). ' ...
+            'Expected 6 (CenterInTask, 7-col raw buffer) or ' ...
+            '8 (CenterOutTask, 9-col raw buffer), or their pre-2026-09-04 ' ...
+            'equivalents 5 and 7. ' ...
             'Add a case to TrajectoryColumnNames.m for new engines.'], nCols);
 end
 if withMoveTime

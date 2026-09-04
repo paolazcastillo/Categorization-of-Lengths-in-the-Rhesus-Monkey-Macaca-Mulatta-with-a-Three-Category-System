@@ -298,21 +298,44 @@ classdef ConfigOrgParams
             % purpose): the index counts ADC samples, so dividing by anything
             % else stretches or compresses every trial's timeline.
             %
-            % CORRECTED 2026-08-25, 1017 -> 952. The old 1017 was inferred
-            % from the storage rate JoyX/JoyY and NPro2 display in Synapse,
-            % but those are DIFFERENT gizmos with their own decimation.
-            % APICh1X/APICh2Y run APIStreamer1Ch.rcx off the PZ5's ~25 kHz
-            % stream through its own 'downsample' divider (26 on this rig),
-            % and that is what sets THIS buffer's write rate. Measured
-            % directly for the first time by polling the newly-exposed
-            % SerStore write-index tag for 30 s: 952.11 Hz. The old value was
-            % stretching every trajectory timestamp by ~7%. Re-measure the
-            % same way if 'downsample' or the PZ5 rate ever change -- do not
-            % infer it from another gizmo's display again. NOTE: 'downsample'
-            % is a RUNTIME parameter and can reset to 1 when Synapse
-            % restarts, which sends the rate to ~26,000 Hz; worth confirming
-            % at the start of a session. See SetupRZ2Joystick.m.
-            orgParams.rz2SampleRateHz = 952;
+            % CORRECTED 2026-09-04, 952 -> 939.0024. 952.11 came from
+            % polling the SerStore write index for 30 s, but session
+            % sessPX-309 (03-Sep-2026) showed the RZ2 timestamps falling
+            % behind GetSecs at 13.69 ms/s, linearly, r = 0.9998 over 33
+            % trials, reaching 3.17 s in four minutes. That puts the true
+            % write rate at 952/1.01369 = 939.1 Hz, which matches
+            % 24414.0625/26 = 939.0024 Hz (the standard TDT base rate
+            % through APIStreamer1Ch.rcx's 'downsample' = 26) to within
+            % 0.015%. The old 952 implied a base of 24755 Hz, which is not a
+            % TDT rate, so the 30 s measurement was itself contaminated.
+            % Confirm on the rig with getSamplingRates and the live
+            % 'downsample' value rather than trusting either number.
+            %
+            % This is now only the SEED of RZ2ClockMap, which re-estimates
+            % the rate from the data every drain. A wrong seed therefore
+            % costs a warm-up (tens of drains) instead of an entire session,
+            % and 'downsample' resetting to 1 on a Synapse restart -- still
+            % a live hazard, it is a RUNTIME parameter -- now trips
+            % ClockSkewMonitor within a frame or two instead of silently
+            % stretching every timestamp.
+            orgParams.rz2SampleRateHz = 939.0024;
+            % Sliding window, in observations (one per drain, so ~60/s), for
+            % RZ2ClockMap's least-squares slope. 600 is ~10 s: long enough
+            % for a well-conditioned fit, short enough to follow a genuine
+            % change in the link.
+            orgParams.rz2ClockWindow = 600;
+            % How far the estimated rate may travel from the seed before it
+            % is clamped, as a fraction. A corrupt run of indices then
+            % cannot rewrite the time base wholesale; the residual skew
+            % grows instead and the monitor below stops the session.
+            orgParams.rz2ClockMaxRateDev = 0.10;
+            % Runtime clock-skew guard (ClockSkewMonitor.m). Warn threshold
+            % is one epoch's worth of jitter; abort threshold is the point
+            % past which every sample-anchored window is measurably shorter
+            % than configured and the session is no longer the experiment it
+            % says it is. Both in seconds.
+            orgParams.rz2SkewWarnSec  = 0.05;
+            orgParams.rz2SkewAbortSec = 0.20;
             % Ceiling on samples ReadRZ2Joystick.m drains in one frame. A
             % healthy link delivers ~16 samples/frame at 60 Hz, so any value
             % well above that leaves room to catch up after a hiccup while

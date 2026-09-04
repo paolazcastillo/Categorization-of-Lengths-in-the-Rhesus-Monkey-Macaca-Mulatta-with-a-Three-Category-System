@@ -1110,6 +1110,18 @@ pauseTask     = 0;
 % from a normal quota-completed one in the end-of-session status text
 % (search "Task stopped" below).
 abortedByOperator = false;
+% Set true when ClockSkewMonitor stops the run: a session killed because its
+% time base went bad is neither an operator abort nor a completed quota, and
+% the end-of-session text has to say so, because the alternative is exactly
+% what happened on 03-Sep-2026 -- a run that ended looking like ordinary
+% poor performance while every sample-anchored window was silently being
+% truncated. Only ever set on the rz2adc path; the mouse and joystick paths
+% read their position and their clock from the same call, so their skew is
+% zero by construction.
+abortedByClock = false;
+skewMonitor = ClockSkewMonitor( ...
+    OrgGet(orgParams, 'rz2SkewWarnSec',  0.05), ...
+    OrgGet(orgParams, 'rz2SkewAbortSec', 0.20));
 % Set true when the session ends because the trial sequence ran out before
 % the quota was met (see "Ran out of stimuli" below). A THIRD outcome, not a
 % variant of the two above: nobody stopped it and it did not finish its
@@ -1219,7 +1231,8 @@ reward = rewTime;
 cursorRect = [0 0 0 0];
 
 % --- Joystick/cursor trajectory buffer (X,Y over time) -------------------
-% One row per frame: [TrialNum, Time, X, Y, Epoch, Block, TrialNumInBlock, Attempt].
+% One row per frame: [TrialNum, Time, X, Y, Epoch, Block, TrialNumInBlock,
+% Attempt, RZ2Idx].
 % Time is MILLISECONDS SINCE THE FIRST TRIAL STARTED (sessionT0, captured
 % once below the first time the setOnce_Trial block runs), not an absolute
 % clock reading; so trajectory_movement_*.csv always starts at ~0
@@ -1244,8 +1257,21 @@ cursorRect = [0 0 0 0];
 % frames from different attempts at the same Block/TrialNumInBlock can
 % still be told apart. Kept in memory and saved at teardown; grows in
 % chunks if a long session exceeds the preallocation.
+%
+% RZ2Idx (column 9) is the relay's absolute sample index for rows the RZ2
+% link produced, and NaN for every other row: mouse/joystick rows, the
+% oversampled rows, and the cached-position row a frame writes when no UDP
+% sample arrived. It is provenance, not decoration. Before this column
+% existed, Time_ms was the only evidence of which clock a row came from,
+% and it was the same column for both, so a row stamped from the wall clock
+% sitting between two index-derived rows was indistinguishable from a
+% genuine one -- that is how 506 backward steps of up to 3.17 s ended up in
+% sessPX-309's export looking like data. NaN here now says outright "this
+% row's time is estimated"; a non-NaN index says "derived, and here is the
+% number it was derived from", which also lets an offline analysis redo the
+% timing under a different rate without re-running anything.
 trajChunk = 200000;
-trajBuf   = zeros(trajChunk, 8);
+trajBuf   = zeros(trajChunk, 9);
 trajN     = 0;
 
 % sessionT0: GetSecs() the instant the first trial starts (set once, inside
@@ -1498,10 +1524,10 @@ while exitFlag == 0
         % screen's frame rate. The [x, y] ReadCursorPosition already read
         % above (for rendering/hit-testing) is the newest row of this
         % same batch, so it is not logged a second time.
-        rz2Batch = TakeRZ2JoystickSamples(rz2.port);   % [time, vx, vy], oldest first
+        rz2Batch = TakeRZ2JoystickSamples(rz2.port);   % [time, vx, vy, absIdx], oldest first
         nRz2 = max(size(rz2Batch, 1), 1);   % always >=1 row/frame, like every other input source
         if trajN + nRz2 > size(trajBuf, 1)
-            trajBuf(end + max(trajChunk, nRz2), 8) = 0;   % grow in one chunk
+            trajBuf(end + max(trajChunk, nRz2), 9) = 0;   % grow in one chunk
         end
         if isempty(rz2Batch)
             % No new UDP sample arrived this frame (rare, only if the
@@ -1509,7 +1535,7 @@ while exitFlag == 0
             % ReadCursorPosition just returned so trajN still advances
             % exactly once, same as every other input source.
             trajN = trajN + 1;
-            trajBuf(trajN, :) = [total_trials, (sampleTime - sessionT0) * 1000, x, y, nextEpoch.Value, trajBlockNum, trajTrialNumInBlock, stimAttempt];
+            trajBuf(trajN, :) = [total_trials, (sampleTime - sessionT0) * 1000, x, y, nextEpoch.Value, trajBlockNum, trajTrialNumInBlock, stimAttempt, NaN];
         else
             for bi = 1:size(rz2Batch, 1)
                 trajN = trajN + 1;
@@ -1523,15 +1549,15 @@ while exitFlag == 0
                 % clamp those rows to exactly 0 rather than letting the
                 % trajectory's first few rz2adc samples read negative.
                 rz2TimeMs = max((rz2Batch(bi, 1) - sessionT0) * 1000, 0);
-                trajBuf(trajN, :) = [total_trials, rz2TimeMs, bx, by, nextEpoch.Value, trajBlockNum, trajTrialNumInBlock, stimAttempt];
+                trajBuf(trajN, :) = [total_trials, rz2TimeMs, bx, by, nextEpoch.Value, trajBlockNum, trajTrialNumInBlock, stimAttempt, rz2Batch(bi, 4)];
             end
         end
     else
         trajN = trajN + 1;
         if trajN > size(trajBuf, 1)
-            trajBuf(end + trajChunk, 8) = 0;   % grow in one chunk
+            trajBuf(end + trajChunk, 9) = 0;   % grow in one chunk
         end
-        trajBuf(trajN, :) = [total_trials, (sampleTime - sessionT0) * 1000, x, y, nextEpoch.Value, trajBlockNum, trajTrialNumInBlock, stimAttempt];
+        trajBuf(trajN, :) = [total_trials, (sampleTime - sessionT0) * 1000, x, y, nextEpoch.Value, trajBlockNum, trajTrialNumInBlock, stimAttempt, NaN];
     end
 
     % trigRowIdx/trigTime: the trajectory row (and its timestamp) for the
@@ -1555,6 +1581,21 @@ while exitFlag == 0
     % t.leaveCenter land exactly on MoveTime_ms == 0 downstream.
     trigRowIdx = trajN;
     trigTime   = sessionT0 + trajBuf(trigRowIdx, 2) / 1000;
+
+    % --- Clock-skew guard (rz2adc only) ----------------------------------
+    % sampleTime and trigTime are two readings of the SAME instant: the
+    % GetSecs taken at this frame's cursor read, and the timestamp the row
+    % that read produced actually carries. On every other input path they
+    % are the same number. On rz2adc, trigTime comes from RZ2ClockMap, so
+    % their difference is a direct measurement of how far the two time bases
+    % have drifted apart -- the one quantity that, left unmeasured, turned a
+    % 1.37% rate error into a session whose last ten trials could not be
+    % completed at all. Cheap enough to run every frame; see
+    % ClockSkewMonitor.m for the two thresholds and what each one means.
+    if useRZ2 && skewMonitor.update(sampleTime - trigTime, this_time)
+        exitFlag       = 1;
+        abortedByClock = true;
+    end
 
     % --- Render ---
     if this_time < foilFlashUntil
@@ -1615,9 +1656,9 @@ while exitFlag == 0
                 sampleTime = GetSecs();   % same convention as the base row above: stamp at this sample's own read
                 trajN = trajN + 1;
                 if trajN > size(trajBuf, 1)
-                    trajBuf(end + trajChunk, 8) = 0;   % grow in one chunk
+                    trajBuf(end + trajChunk, 9) = 0;   % grow in one chunk
                 end
-                trajBuf(trajN, :) = [total_trials, (sampleTime - sessionT0) * 1000, xOver, yOver, nextEpoch.Value, trajBlockNum, trajTrialNumInBlock, stimAttempt];
+                trajBuf(trajN, :) = [total_trials, (sampleTime - sessionT0) * 1000, xOver, yOver, nextEpoch.Value, trajBlockNum, trajTrialNumInBlock, stimAttempt, NaN];
             end
         end
         [~, stimOnsetTime] = Screen('AsyncFlipEnd', taskWindow);
@@ -2457,7 +2498,10 @@ if total_trials == 0
         SessionReport.reward(rewardPulsesTask, rewardSecTask, ...
             rewardPulsesManual, rewardSecManual, rewardMlPerSec);
     end
-    if abortedByOperator
+    if abortedByClock
+        set(orgParams.handles.text77, 'String', 'Stopped: input clock fault');
+        set(orgParams.handles.text77, 'ForegroundColor', 'red');
+    elseif abortedByOperator
         set(orgParams.handles.text77, 'String', 'Task stopped');
         set(orgParams.handles.text77, 'ForegroundColor', 'red');
     end
@@ -2652,7 +2696,9 @@ end
 % otherwise be invisible: the session stopped because the sequence ran out,
 % not because the quota was met, and without its own message the only trace
 % would be a line in the log.
-if abortedByOperator
+if abortedByClock
+    set(orgParams.handles.text77, 'String', 'Stopped: input clock fault');
+elseif abortedByOperator
     set(orgParams.handles.text77, 'String', 'Task stopped');
 elseif endedEarly
     set(orgParams.handles.text77, 'String', sprintf( ...

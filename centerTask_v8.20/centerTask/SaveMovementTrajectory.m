@@ -119,6 +119,13 @@ function SaveMovementTrajectory(trajBuf, trajN, outDir, runTag, sessionDate, mov
         return;
     end
 
+    % Same non-decreasing-time check the full export runs; see
+    % ReportTimeMonotonicity.m. Run AFTER the movement filter on purpose:
+    % this file is the one kinematics are actually differentiated from, so
+    % what matters is whether the ROWS THAT SURVIVED the cut are ordered,
+    % not whether the buffer they came from was.
+    ReportTimeMonotonicity(trajectoryMovement(:, 1), 'movement trajectory');
+
     % Save .mat file
     if saveAsMat
         try
@@ -155,11 +162,19 @@ function m = AppendMoveTime(m)
     %
     % Trials are identified the same way plotMovementTrajectories.m does it:
     % by every identity column that follows Epoch; Block/TrialNumInBlock/
-    % Attempt for the CenterOutTask layout, Attempt alone for a 5-column one
-    % -- so this works for both without knowing which engine wrote the rows.
-    % A 5-column layout has no per-trial identity beyond Attempt, so trials
-    % sharing an attempt number would share one onset; that layout is
-    % CenterInTask's, which has no MOVEMENT epoch and never calls this.
+    % Attempt for the CenterOutTask layout, Attempt alone for the
+    % CenterInTask one -- so this works for both without knowing which
+    % engine wrote the rows. The latter has no per-trial identity beyond
+    % Attempt, so trials sharing an attempt number would share one onset;
+    % that layout is CenterInTask's, which has no MOVEMENT epoch and never
+    % calls this.
+    %
+    % 5:end-1, not 5:end (2026-09-04): the trailing column is now RZ2Idx,
+    % which is a per-SAMPLE index, not trial identity. Including it would
+    % make every row its own group, every onset its own timestamp, and
+    % every MoveTime_ms exactly zero -- silently, since a column of zeros
+    % is a perfectly well-formed column. The identity columns are the ones
+    % between Epoch and RZ2Idx.
     %
     % Onset is min(Time_ms) of the group, not the first row of it: the
     % rz2adc path appends a whole batch of samples per frame (see trajBuf in
@@ -171,7 +186,7 @@ function m = AppendMoveTime(m)
         return;
     end
     t = m(:, 1);
-    [~, ~, trialIdx] = unique(m(:, 5:end), 'rows');
+    [~, ~, trialIdx] = unique(m(:, 5:end-1), 'rows');
     onset = accumarray(trialIdx, t, [], @min);
     m = [m, t - onset(trialIdx)];
 end

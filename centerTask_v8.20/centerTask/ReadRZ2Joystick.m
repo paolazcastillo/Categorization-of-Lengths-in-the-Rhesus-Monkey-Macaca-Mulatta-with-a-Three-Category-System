@@ -14,18 +14,28 @@ function [vx, vy] = ReadRZ2Joystick(rz2)
 % machines can be upgraded one at a time; those samples fall back to the old
 % estimated timestamps and are counted in UserData.nLegacyFmt.
 %
-% TIME BASE. absIdx counts RZ2 samples at the ADC's own rate, so the time of
-% any sample is (idx - idxAnchor)/sampleRateHz after the local clock reading
-% taken when the anchor sample arrived. That is what makes a backlogged
+% TIME BASE. absIdx counts RZ2 samples at the ADC's own rate, so a sample's
+% time is an affine function of its index. That is what makes a backlogged
 % sample carry the time it was CAPTURED rather than the time it was finally
-% read -- the previous version spread each drained batch evenly between
+% read -- an earlier version spread each drained batch evenly between
 % drains, which is fiction as soon as a queue exists, and those timestamps
-% are what the trajectory export -- and any velocity derived from it
-% offline -- are built from. Two honest caveats: the anchor absorbs whatever one-way
-% latency existed at the first drain as a CONSTANT offset (harmless for
-% velocities and for within-trial timing, since it cancels in differences),
-% and the RZ2's clock and this machine's clock drift apart by their crystals'
-% ppm over a session -- neither is corrected here.
+% are what the trajectory export, and any velocity derived from it offline,
+% are built from.
+%
+% The affine map is NOT a fixed anchor plus a constant rate any more. It is
+% RZ2ClockMap, re-estimated from (index, arrival time) pairs on every drain
+% -- see that file for the estimator and for why a fixed constant cannot
+% work. The short version: a single wrong constant integrates without bound,
+% and on 03-Sep-2026 it put the RZ2 stamps 3.17 s behind GetSecs by the end
+% of a four-minute session, which silently truncated every window the state
+% machine anchors on a sample timestamp. The rate now comes out of the data,
+% so a wrong seed, a changed Synapse 'downsample', and crystal drift are all
+% absorbed by the same mechanism.
+%
+% One honest caveat remains: the link's FLOOR one-way latency is invisible
+% from this side and stays in the map as a constant offset. It cancels in
+% every within-trial difference and shifts stimulus-to-response intervals by
+% that fixed amount. Measuring it needs a hardware loopback.
 %
 % DRAIN CAP. The loop stops after rz2.maxSamplesPerDrain samples instead of
 % draining whatever has piled up. An unbounded drain inside the Psychtoolbox
@@ -110,11 +120,17 @@ if nRows > 0
     idx = rows(:, 1);
     haveIdx = ~isnan(idx);
 
-    % Anchor the time base on the first indexed sample of the session.
-    if any(haveIdx) && isnan(ud.idxAnchor)
-        first = find(haveIdx, 1);
-        ud.idxAnchor = idx(first);
-        ud.tAnchor   = t2;
+    % Feed the clock map ONE observation per drain: the NEWEST indexed
+    % sample of this batch paired with the local clock reading taken when
+    % the drain started. The newest sample is the least delayed one in the
+    % batch (everything older sat in a queue behind it), so it is the pair
+    % closest to the link's latency floor, which is what the estimator's
+    % minimum-delay anchoring wants. Feeding every sample instead would add
+    % nothing to the slope and would drag the offset toward the mean queue
+    % depth.
+    if any(haveIdx)
+        iiNew = idx(haveIdx);
+        rz2.clock.addObservation(iiNew(end), t2);
     end
 
     % Count index gaps: dropped datagrams AND the relay's periodic
@@ -135,20 +151,33 @@ if nRows > 0
         ud.lastIdx  = ii(end);
     end
 
-    % Indexed samples get a real time; legacy ones keep the old
-    % evenly-spread estimate across this drain interval.
+    % Indexed samples get their time from the clock map; legacy ones keep
+    % the evenly-spread estimate across this drain interval. Both are now in
+    % the SAME reference frame (this machine's GetSecs), which they were not
+    % before: the map's output used to be a free-running index clock while
+    % the legacy branch used the wall clock, so a single legacy sample
+    % dropped into a batch produced a step forward and then a step back in
+    % the trajectory's time column, of exactly the size of the accumulated
+    % divergence. On 03-Sep-2026 that was 506 backward steps of up to 3.17 s
+    % in one session's export. The legacy estimate is still coarser (it is a
+    % guess within one drain interval, ~16 ms), but it can no longer be
+    % offset from its neighbours by a growing amount.
     tOut = zeros(nRows, 1);
     if any(haveIdx)
-        tOut(haveIdx) = ud.tAnchor + (idx(haveIdx) - ud.idxAnchor) / rz2.sampleRateHz;
+        tOut(haveIdx) = rz2.clock.indexToTime(idx(haveIdx));
     end
     if any(~haveIdx)
         nLegacy = sum(~haveIdx);
         tOut(~haveIdx) = t1 + (t2 - t1) * ((1:nLegacy)' / nLegacy);
         ud.nLegacyFmt = ud.nLegacyFmt + nLegacy;
     end
-    rows(:, 1) = tOut;
 
-    ud.batch    = [ud.batch; rows];
+    % [time, vx, vy, absIdx]. The index rides along so the trajectory export
+    % can carry it verbatim: it is the row's provenance (NaN = this sample
+    % never had an index, so its time is estimated, not derived) and it lets
+    % an offline analysis re-derive timing under a different rate without
+    % re-running anything.
+    ud.batch    = [ud.batch; [tOut, rows(:, 2), rows(:, 3), idx]];
     ud.lastX    = rows(end, 2);
     ud.lastY    = rows(end, 3);
     ud.nSamples = ud.nSamples + nRows;
@@ -178,9 +207,9 @@ if capped
     if ud.capConsec == rz2.capWarnFrames
         warning('rz2:drainCapped', ...
             ['RZ2 drain has been at its %d-sample per-frame cap for %d frames straight -- ' ...
-             'the relay is arriving faster than this loop is reading it and the queue is ' ...
-             'not clearing, so cursor lag is building. Check that the task loop is holding ' ...
-             'frame rate; the teardown summary reports the worst backlog seen.'], ...
+            'the relay is arriving faster than this loop is reading it and the queue is ' ...
+            'not clearing, so cursor lag is building. Check that the task loop is holding ' ...
+            'frame rate; the teardown summary reports the worst backlog seen.'], ...
             maxSamples, rz2.capWarnFrames);
     end
 else

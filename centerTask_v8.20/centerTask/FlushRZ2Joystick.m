@@ -67,10 +67,14 @@ try
         ud.lastDrainTime = GetSecs();
         % A fresh queue is not a capping situation any more.
         ud.capConsec     = 0;
-        % idxAnchor/tAnchor are deliberately NOT reset: they keep the whole
-        % session on one timeline, which is what the trajectory export needs.
-        % Only the very first flush (before any sample has been drained)
-        % matters for the anchor, and at that point it is still NaN anyway.
+        % rz2.clock is deliberately NOT reset or told about this: its
+        % observations are (index, arrival time) pairs, and discarding
+        % queued datagrams removes future observations without invalidating
+        % any past one. The map keeps the whole session on one timeline,
+        % which is what the trajectory export needs; re-anchoring it here
+        % would introduce exactly the discontinuity this flush exists to
+        % avoid. (Before 2026-09-04 the same note applied to the fixed
+        % idxAnchor/tAnchor pair the map replaced.)
         u.UserData = ud;
     end
 catch

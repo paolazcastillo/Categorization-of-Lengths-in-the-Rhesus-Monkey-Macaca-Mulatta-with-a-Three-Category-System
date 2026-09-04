@@ -1,4 +1,4 @@
-function DiagnoseRZ2Cursor(varargin)
+unction DiagnoseRZ2Cursor(varargin)
 % DIAGNOSERZ2CURSOR  Minimal, cursor-only harness for isolating the rz2adc
 % lag reported in this session's debugging: no targets, no trials, no
 % reward -- just SetupRZ2Joystick -> ReadRZ2Joystick -> draw a dot, every
@@ -91,9 +91,14 @@ function DiagnoseRZ2Cursor(varargin)
 %   LAG estimate   : how OLD, in seconds, the sample currently driving the
 %                    cursor is, computed the same way ReadRZ2Joystick.m
 %                    itself timestamps samples (see that file's TIME BASE
-%                    note): tAnchor + (lastIdx-idxAnchor)/sampleRateHz, vs.
-%                    GetSecs() now. This is the direct, in-seconds answer to
-%                    "how far behind is what I'm looking at."
+%                    note): rz2.clock.indexToTime(lastIdx) vs. GetSecs()
+%                    now. This is the direct, in-seconds answer to "how far
+%                    behind is what I'm looking at." Since 2026-09-04 the
+%                    map behind it is re-estimated from the data rather than
+%                    being a fixed anchor plus a constant rate, so a LAG
+%                    that grows linearly all session no longer means the
+%                    rate constant is wrong -- it now means a real backlog.
+%                    The two used to be indistinguishable from here.
 %
 % A separate MATLAB figure (not the Psychtoolbox window) plots vx and vy
 % over the last PLOT_WINDOW_SEC seconds, updated a few times a second --
@@ -115,7 +120,7 @@ outputDir  = p.Results.outputDir;
 
 orgParams = struct();   % empty -- every rz2* setting falls through to the
                          % OrgGet() default baked into SetupRZ2Joystick.m
-                         % (rz2SampleRateHz=952, rz2MaxSamplesPerDrain=2048,
+                         % (rz2SampleRateHz=939.0024, rz2MaxSamplesPerDrain=2048,
                          % rz2InputBufferSize=4194304). ConfigOrgParams.m sets
                          % those three to the SAME values for the real task, so
                          % this harness sees what the task sees. If you retune
@@ -309,8 +314,8 @@ try
 
         ud = rz2.port.UserData;
 
-        if ~isnan(ud.idxAnchor) && ~isnan(ud.lastIdx)
-            sampleTime = ud.tAnchor + (ud.lastIdx - ud.idxAnchor) / rz2.sampleRateHz;
+        if ~isnan(ud.lastIdx)
+            sampleTime = rz2.clock.indexToTime(ud.lastIdx);
             lagSec = GetSecs() - sampleTime;
         else
             lagSec = NaN;   % no indexed sample drained yet

@@ -64,10 +64,21 @@ try
                 fprintf('RZ2 link: worst backlog left after a drain: %d byte(s)\n', ud.maxBacklog);
             end
         end
+        % Printed even at zero, unlike the counters above. A session with no
+        % un-indexed samples and a session where this was never checked used
+        % to look identical in the log, and these are the rows whose
+        % timestamps are ESTIMATED rather than index-derived -- the ones that
+        % put a second time base into the trajectory's Time_ms column. Their
+        % count belongs in every transcript, not only in the bad ones. They
+        % are also now identifiable row by row in the export: RZ2Idx is NaN
+        % on exactly these.
+        fprintf(['RZ2 link: %d sample(s) arrived un-indexed (pre-2026-08-04 format, or a ' ...
+            'datagram that lost its N: prefix in transit), so their trajectory timestamps ' ...
+            'are ESTIMATED rather than index-derived; they are the RZ2Idx = NaN rows in ' ...
+            'the export.\n'], ud.nLegacyFmt);
         if ud.nLegacyFmt > 0
-            fprintf(['RZ2 link: NOTE -- %d sample(s) arrived in the pre-2026-08-04 un-indexed ' ...
-                'format, so their trajectory timestamps are ESTIMATED, not derived from the ' ...
-                'sample index. Update JoystickRelayToTask.m on Computer 1.\n'], ud.nLegacyFmt);
+            fprintf(['RZ2 link: NOTE -- check JoystickRelayToTask.m on Computer 1 is current, ' ...
+                'and that nothing else is sending to this port.\n']);
         end
     else
         % DIAGNOSTIC (2026-08-21): this branch used to be silent -- ud existed
@@ -81,6 +92,34 @@ try
             fprintf(', fields={%s}', strjoin(fieldnames(ud), ','));
         end
         fprintf('\n');
+    end
+    % Clock map health. This is the section that did not exist when the
+    % time base was a fixed anchor plus a constant: there was nothing to
+    % report, because nothing was being estimated, and a wrong constant
+    % therefore produced no diagnostic of any kind -- it just quietly bent
+    % every timestamp in the session. The estimated rate here is a
+    % MEASUREMENT of the link, worth reading every session: a persistent
+    % gap from the seed means orgParams.rz2SampleRateHz should be updated
+    % (and 'downsample' on the Synapse side confirmed), and a large one
+    % means it changed under you.
+    if isfield(rz2, 'clock') && ~isempty(rz2.clock)
+        c = rz2.clock.summary();
+        fprintf('RZ2 clock: estimated write rate %.3f Hz (seed %.3f Hz, %+.0f ppm)\n', ...
+            c.estimatedRateHz, c.seedRateHz, c.estimatedVsSeedPpm);
+        fprintf('RZ2 clock: %d observation(s), %d fit(s), residual rms %.1f ms\n', ...
+            c.nObservations, c.nFits, c.residualRmsSec * 1000);
+        if c.nSlopeClamped > 0
+            fprintf(['RZ2 clock: WARNING -- the rate estimate hit its clamp on %d fit(s). ' ...
+                'The link is reporting a rate more than the allowed fraction away from the ' ...
+                'seed; either the seed is wrong or the index stream is corrupt.\n'], ...
+                c.nSlopeClamped);
+        end
+        if c.nMonotoneClamped > 0
+            fprintf(['RZ2 clock: %d sample(s) were held forward to keep the trajectory ' ...
+                'monotonic (worst %.1f ms). A few are normal re-anchoring; a steady stream ' ...
+                'means the fit is unstable.\n'], ...
+                c.nMonotoneClamped, c.worstMonotoneClampSec * 1000);
+        end
     end
 catch ME_rz2sum
     % DIAGNOSTIC (2026-08-21): was a bare "catch, end" -- swallowed whatever

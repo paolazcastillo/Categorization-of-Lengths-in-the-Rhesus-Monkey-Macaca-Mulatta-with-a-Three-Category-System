@@ -426,6 +426,14 @@ pauseTask     = 0;
 % from a normal quota-completed one in the end-of-session status text
 % (search "Task stopped" below). Same as CenterOutTask.m.
 abortedByOperator = false;
+% Set true when ClockSkewMonitor stops the run. Same flag, same reasoning,
+% as CenterOutTask.m: a session killed by a bad time base is neither an
+% operator abort nor a completed quota, and the end-of-session text has to
+% distinguish it. Only ever set on the rz2adc path.
+abortedByClock = false;
+skewMonitor = ClockSkewMonitor( ...
+    OrgGet(orgParams, 'rz2SkewWarnSec',  0.05), ...
+    OrgGet(orgParams, 'rz2SkewAbortSec', 0.20));
 
 % Correction procedure: a failed attempt repeats (same task, there is no
 % varying stimulus to reshuffle), up to maxStimAttempts total attempts; the
@@ -462,10 +470,14 @@ cursorRect = [0 0 0 0];
 awaitTargetOnset = 0;
 
 % --- Joystick/cursor trajectory buffer (X,Y over time) --------------------
-% One row per frame: [TrialNum, Time, X, Y, Epoch, Attempt]. No Block/
-% TrialNumInBlock columns here -- there is no length/position rotation to
-% split on, every trial is the same task. SaveTrajectory.m detects this
-% 6-column layout from the column count and writes the matching CSV header.
+% One row per frame: [TrialNum, Time, X, Y, Epoch, Attempt, RZ2Idx]. No
+% Block/TrialNumInBlock columns here -- there is no length/position rotation
+% to split on, every trial is the same task. SaveTrajectory.m detects this
+% 7-column layout from the column count and writes the matching CSV header.
+% RZ2Idx is the relay's absolute sample index for rows the RZ2 link
+% produced and NaN for every other row, i.e. the row's provenance: NaN says
+% the timestamp is estimated rather than index-derived. Same column, same
+% reasoning, as CenterOutTask.m -- see the longer note there.
 % Time is MILLISECONDS SINCE THE FIRST TRIAL STARTED (sessionT0, captured
 % once below the first time the setOnce_Trial block runs), not an absolute
 % clock reading -- so trajectory_*.csv always starts at ~0 regardless of
@@ -475,7 +487,7 @@ awaitTargetOnset = 0;
 % at the top of the frame -- so Time_ms is comparable across rows, across
 % both engines' files, and against the console's live session clock.
 trajChunk = 200000;
-trajBuf   = zeros(trajChunk, 6);
+trajBuf   = zeros(trajChunk, 7);
 trajN     = 0;
 
 % sessionT0: GetSecs() the instant the first trial starts (set once, inside
@@ -631,10 +643,10 @@ while exitFlag == 0
         % screen's frame rate. The [x, y] ReadCursorPosition already read
         % above (for rendering/hit-testing) is the newest row of this
         % same batch, so it is not logged a second time.
-        rz2Batch = TakeRZ2JoystickSamples(rz2.port);   % [time, vx, vy], oldest first
+        rz2Batch = TakeRZ2JoystickSamples(rz2.port);   % [time, vx, vy, absIdx], oldest first
         nRz2 = max(size(rz2Batch, 1), 1);   % always >=1 row/frame, like every other input source
         if trajN + nRz2 > size(trajBuf, 1)
-            trajBuf(end + max(trajChunk, nRz2), 6) = 0;
+            trajBuf(end + max(trajChunk, nRz2), 7) = 0;
         end
         if isempty(rz2Batch)
             % No new UDP sample arrived this frame (rare -- only if the
@@ -642,7 +654,7 @@ while exitFlag == 0
             % ReadCursorPosition just returned so trajN still advances
             % exactly once, same as every other input source.
             trajN = trajN + 1;
-            trajBuf(trajN, :) = [trialIndex, (sampleTime - sessionT0) * 1000, x, y, nextEpoch, stimAttempt];
+            trajBuf(trajN, :) = [trialIndex, (sampleTime - sessionT0) * 1000, x, y, nextEpoch, stimAttempt, NaN];
         else
             for bi = 1:size(rz2Batch, 1)
                 trajN = trajN + 1;
@@ -656,15 +668,15 @@ while exitFlag == 0
                 % clamp those rows to exactly 0 rather than letting the
                 % trajectory's first few rz2adc samples read negative.
                 rz2TimeMs = max((rz2Batch(bi, 1) - sessionT0) * 1000, 0);
-                trajBuf(trajN, :) = [trialIndex, rz2TimeMs, bx, by, nextEpoch, stimAttempt];
+                trajBuf(trajN, :) = [trialIndex, rz2TimeMs, bx, by, nextEpoch, stimAttempt, rz2Batch(bi, 4)];
             end
         end
     else
         trajN = trajN + 1;
         if trajN > size(trajBuf, 1)
-            trajBuf(end + trajChunk, 6) = 0;
+            trajBuf(end + trajChunk, 7) = 0;
         end
-        trajBuf(trajN, :) = [trialIndex, (sampleTime - sessionT0) * 1000, x, y, nextEpoch, stimAttempt];
+        trajBuf(trajN, :) = [trialIndex, (sampleTime - sessionT0) * 1000, x, y, nextEpoch, stimAttempt, NaN];
     end
 
     % trigTime: the timestamp of the cursor sample the state machine below
@@ -685,6 +697,18 @@ while exitFlag == 0
     % newest sample of the drained batch and carries ReadRZ2Joystick.m's
     % interpolated estimate, which is NOT sampleTime.
     trigTime = sessionT0 + trajBuf(trajN, 2) / 1000;
+
+    % --- Clock-skew guard (rz2adc only) ----------------------------------
+    % Two readings of the same instant: the GetSecs taken at this frame's
+    % cursor read, and the timestamp the row it produced carries. Equal by
+    % construction on every path except rz2adc, where trigTime comes from
+    % RZ2ClockMap -- so their difference measures how far the two time bases
+    % have drifted. Same guard, same thresholds, as CenterOutTask.m; see
+    % ClockSkewMonitor.m.
+    if useRZ2 && skewMonitor.update(sampleTime - trigTime, this_time)
+        exitFlag       = 1;
+        abortedByClock = true;
+    end
 
     % --- Render ---
     if showCursor
@@ -712,9 +736,9 @@ while exitFlag == 0
                 sampleTime = GetSecs();   % same convention as the base row above: stamp at this sample's own read
                 trajN = trajN + 1;
                 if trajN > size(trajBuf, 1)
-                    trajBuf(end + trajChunk, 6) = 0;
+                    trajBuf(end + trajChunk, 7) = 0;
                 end
-                trajBuf(trajN, :) = [trialIndex, (sampleTime - sessionT0) * 1000, xOver, yOver, nextEpoch, stimAttempt];
+                trajBuf(trajN, :) = [trialIndex, (sampleTime - sessionT0) * 1000, xOver, yOver, nextEpoch, stimAttempt, NaN];
             end
         end
         [~, stimOnsetTime] = Screen('AsyncFlipEnd', taskWindow);
@@ -1068,7 +1092,10 @@ if total_trials == 0
         SessionReport.reward(rewardPulsesTask, rewardSecTask, ...
             rewardPulsesManual, rewardSecManual, rewardMlPerSec);
     end
-    if abortedByOperator
+    if abortedByClock
+        set(orgParams.handles.text77, 'String', 'Stopped: input clock fault');
+        set(orgParams.handles.text77, 'ForegroundColor', 'red');
+    elseif abortedByOperator
         set(orgParams.handles.text77, 'String', 'Task stopped');
         set(orgParams.handles.text77, 'ForegroundColor', 'red');
     end
@@ -1132,7 +1159,9 @@ catch ME_print
     fprintf('WARNING: error during console printout: %s\n', ME_print.message);
 end
 
-if abortedByOperator
+if abortedByClock
+    set(orgParams.handles.text77, 'String', 'Stopped: input clock fault');
+elseif abortedByOperator
     set(orgParams.handles.text77, 'String', 'Task stopped');
 else
     set(orgParams.handles.text77, 'String', 'Task done');
