@@ -1,4 +1,4 @@
-unction DiagnoseRZ2Cursor(varargin)
+function DiagnoseRZ2Cursor(varargin)
 % DIAGNOSERZ2CURSOR  Minimal, cursor-only harness for isolating the rz2adc
 % lag reported in this session's debugging: no targets, no trials, no
 % reward -- just SetupRZ2Joystick -> ReadRZ2Joystick -> draw a dot, every
