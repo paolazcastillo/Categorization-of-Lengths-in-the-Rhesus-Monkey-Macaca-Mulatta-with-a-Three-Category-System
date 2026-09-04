@@ -29,8 +29,26 @@ classdef RZ2ClockMap < handle
 %             windowLen observations. OLS is unbiased for the slope even
 %             though the observations are contaminated by latency, because
 %             the contamination is a level, not a trend, as long as the
-%             backlog is stationary. A growing backlog WOULD bias it, which
-%             is what nSlopeClamped and the skew monitor exist to expose.
+%             backlog is stationary.
+%
+%             A GROWING backlog is the exception, and it is the dangerous
+%             one. With t_arr(n) = t_cap(n) + L(n) and L increasing, the
+%             fitted slope is 1/f + dL/dn: the map attributes to a slower
+%             ADC what is really samples arriving later and later, so its
+%             output tracks ARRIVALS instead of captures. trigTime then
+%             stays close to sampleTime, the skew monitor sees nothing, and
+%             a real backlog becomes invisible -- the precise failure the
+%             monitor exists to catch.
+%
+%             Hence the queueClear gate on addObservation: a drain that did
+%             not empty the queue contributes nothing. Those are the
+%             observations whose latency is above the floor by an amount
+%             that is itself trending, and they are exactly the ones that
+%             carry the bias. If the queue never clears, the map simply
+%             stops updating, the estimate holds where it was, and the skew
+%             grows until the monitor stops the session. Refusing to
+%             estimate is the correct response to data that cannot support
+%             the estimate.
 %   offset  : anchored on the MINIMUM residual of the window, not on the
 %             OLS intercept. The OLS intercept absorbs the MEAN transport
 %             latency; the minimum residual tracks the fastest observed
@@ -60,6 +78,7 @@ classdef RZ2ClockMap < handle
         maxRateDev              % fractional band the slope is clamped to around the seed
         minObs                  % observations required before the first fit
         nObs                    % observations accepted
+        nObsRejected            % observations refused because the queue was not clear
         nFits                   % refits performed
         nSlopeClamped           % fits whose slope hit the clamp
         nMonotoneClamped        % emitted samples pulled forward to stay monotone
@@ -99,6 +118,7 @@ classdef RZ2ClockMap < handle
             obj.anchored           = false;
             obj.lastEmitted        = -Inf;
             obj.nObs               = 0;
+            obj.nObsRejected       = 0;
             obj.nFits              = 0;
             obj.nSlopeClamped      = 0;
             obj.nMonotoneClamped   = 0;
@@ -106,9 +126,22 @@ classdef RZ2ClockMap < handle
             obj.residualRms        = NaN;
         end
 
-        function addObservation(obj, idxNewest, tLocal)
+        function addObservation(obj, idxNewest, tLocal, queueClear)
+            % queueClear: true when the drain that produced this pair left
+            % the receive queue empty, i.e. this sample waited only the
+            % link's floor latency. Defaults true so a caller that cannot
+            % tell keeps the old behaviour; see the ESTIMATOR note above
+            % for why a pair taken while the queue is still draining is
+            % worse than no pair at all.
+            if nargin < 4 || isempty(queueClear)
+                queueClear = true;
+            end
             if ~isscalar(idxNewest) || ~isscalar(tLocal) || ...
                     ~isfinite(idxNewest) || ~isfinite(tLocal)
+                return;
+            end
+            if ~queueClear
+                obj.nObsRejected = obj.nObsRejected + 1;
                 return;
             end
             obj.head = mod(obj.head, obj.windowLen) + 1;
@@ -156,6 +189,7 @@ classdef RZ2ClockMap < handle
                 'estimatedRateHz',       1 / obj.secPerSample, ...
                 'estimatedVsSeedPpm',    (obj.seedSecPerSample / obj.secPerSample - 1) * 1e6, ...
                 'nObservations',         obj.nObs, ...
+                'nObservationsRejected', obj.nObsRejected, ...
                 'nFits',                 obj.nFits, ...
                 'nSlopeClamped',         obj.nSlopeClamped, ...
                 'nMonotoneClamped',      obj.nMonotoneClamped, ...

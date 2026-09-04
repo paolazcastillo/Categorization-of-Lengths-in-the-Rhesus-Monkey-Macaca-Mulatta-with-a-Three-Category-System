@@ -116,6 +116,19 @@ end
 
 rows = rows(1:nRows, :);
 
+% Whatever is still queued after this drain -- the health signal that used
+% to be invisible. Read BEFORE the timestamping below, not after it as it
+% used to be, because the clock map needs it: a drain that left the queue
+% non-empty is a drain whose newest sample waited longer than the link's
+% floor, and feeding those pairs to the estimator is what lets a growing
+% backlog be absorbed into the rate instead of showing up as skew. See
+% RZ2ClockMap.m's ESTIMATOR note.
+if rz2.useNewUDP
+    backlog = u.NumDatagramsAvailable;
+else
+    backlog = u.BytesAvailable;   % bytes, not datagrams (legacy object)
+end
+
 if nRows > 0
     idx = rows(:, 1);
     haveIdx = ~isnan(idx);
@@ -130,7 +143,7 @@ if nRows > 0
     % depth.
     if any(haveIdx)
         iiNew = idx(haveIdx);
-        rz2.clock.addObservation(iiNew(end), t2);
+        rz2.clock.addObservation(iiNew(end), t2, backlog == 0);
     end
 
     % Count index gaps: dropped datagrams AND the relay's periodic
@@ -183,13 +196,6 @@ if nRows > 0
     ud.nSamples = ud.nSamples + nRows;
 end
 
-% Whatever is still queued after this drain -- the health signal that used
-% to be invisible.
-if rz2.useNewUDP
-    backlog = u.NumDatagramsAvailable;
-else
-    backlog = u.BytesAvailable;   % bytes, not datagrams (legacy object)
-end
 if backlog > ud.maxBacklog
     ud.maxBacklog = backlog;
 end
@@ -207,9 +213,9 @@ if capped
     if ud.capConsec == rz2.capWarnFrames
         warning('rz2:drainCapped', ...
             ['RZ2 drain has been at its %d-sample per-frame cap for %d frames straight -- ' ...
-            'the relay is arriving faster than this loop is reading it and the queue is ' ...
-            'not clearing, so cursor lag is building. Check that the task loop is holding ' ...
-            'frame rate; the teardown summary reports the worst backlog seen.'], ...
+             'the relay is arriving faster than this loop is reading it and the queue is ' ...
+             'not clearing, so cursor lag is building. Check that the task loop is holding ' ...
+             'frame rate; the teardown summary reports the worst backlog seen.'], ...
             maxSamples, rz2.capWarnFrames);
     end
 else
