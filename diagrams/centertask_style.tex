@@ -1,0 +1,21 @@
+% Shared preamble for the CenterTask panel files (panel_a/b/c.tex).
+% Edit colours and node styles here, once.
+\usepackage{amsmath}
+\usetikzlibrary{arrows.meta,positioning,calc}
+
+% category colours as in ColorCategoryMap.m: 1=Short/Orange, 2=Mid/Green, 3=Long/Blue
+\definecolor{catShort}{RGB}{243,178,132}
+\definecolor{catMid}{RGB}{158,209,172}
+\definecolor{catLong}{RGB}{157,188,234}
+
+\tikzset{ctpanel/.style={
+  font=\sffamily,
+  band/.style={rounded corners=6pt, fill=black!7, draw=none, inner sep=8pt, minimum height=1.15cm},
+  unit/.style={circle, fill=catMid!60, draw=none, minimum size=0.95cm, inner sep=0pt},
+  flow/.style={-{Latex[length=2.2mm]}, line width=0.8pt},
+  rowlab/.style={anchor=east, font=\sffamily\large},
+  now/.style={fill=catShort!55, rounded corners=3pt, inner sep=3pt},
+  stage/.style={rounded corners=6pt, fill=black!8, draw=none, inner sep=8pt, minimum height=1.2cm, align=center},
+  target/.style={circle, minimum size=0.9cm, inner sep=0pt, draw=none, font=\sffamily\scriptsize, text=black!75},
+  axis/.style={line width=0.6pt},
+}}

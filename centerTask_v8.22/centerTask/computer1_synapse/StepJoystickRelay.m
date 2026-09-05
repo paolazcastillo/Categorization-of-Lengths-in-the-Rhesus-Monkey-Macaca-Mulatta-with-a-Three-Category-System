@@ -235,6 +235,7 @@ end   % if ~useWriteIdx  (recalibration is skipped in write-index mode)
 %    slowly the driving loop calls this. MAX_READ_PER_CYCLE bounds a long stall.
 if useWriteIdx
     idxOk = true;
+    tProf = tic;
     try
         Wx = mod(round(double(readWriteIndex(state.syn, 'APICh1X', state.WRITE_IDX_TAG_X))), state.BUF_SIZE);
         Wy = mod(round(double(readWriteIndex(state.syn, 'APICh2Y', state.WRITE_IDX_TAG_Y))), state.BUF_SIZE);
@@ -247,6 +248,7 @@ if useWriteIdx
                 state.WRITE_IDX_TAG_X, state.WRITE_IDX_TAG_Y, ME_idx.message);
         end
     end
+    state.profIdxMs = state.profIdxMs + toc(tProf) * 1000;
     if idxOk && ~state.widxInited
         % First good read: anchor the read cursor to the live head so we do
         % NOT dump the whole backlog buffer at startup; stream forward from here.
@@ -288,14 +290,27 @@ else
     nRead = max(1, min(nRead, state.MAX_READ_PER_CYCLE));
 end
 state.tReadRef = tic;
+% nDone is how far the read cursors ACTUALLY advanced this cycle: nRead once
+% both buffer reads succeed, 0 if either throws. absIdx below advances by
+% nDone, not nRead. It used to advance by nRead unconditionally, outside the
+% try, while the cursor advance sat inside it -- so a failed readBufWindow
+% left the cursors in place and pushed absIdx forward anyway, and the next
+% cycle re-read and re-sent the same samples under new, higher indices:
+% duplicated positions with two different timestamps, and an index that
+% overstated real elapsed samples by nRead. Found by review 2026-09-05; not
+% seen firing on the rig (no 'read error' lines in any log), but latent.
+nDone = 0;
 try
     if nRead > 0
     offsetX = mod(state.curIdxX, state.BUF_SIZE);
     offsetY = mod(state.curIdxY, state.BUF_SIZE);
+    tProf   = tic;
     dataX   = readBufWindow(state.syn, 'APICh1X', state.BUF_SIZE, offsetX, nRead);
     dataY   = readBufWindow(state.syn, 'APICh2Y', state.BUF_SIZE, offsetY, nRead);
+    state.profReadMs = state.profReadMs + toc(tProf) * 1000;
     state.curIdxX = mod(state.curIdxX + nRead, state.BUF_SIZE);
     state.curIdxY = mod(state.curIdxY + nRead, state.BUF_SIZE);
+    nDone = nRead;
 
     % Send this cycle's samples, SPLIT into datagrams of at most
     % MAX_SAMPLES_PER_DGRAM so no single datagram exceeds the UDP output
@@ -310,6 +325,7 @@ try
         xNorm = max(-1, min(1, dataX(1:nSamples) / state.JOY_RANGE));
         yNorm = max(-1, min(1, dataY(1:nSamples) / state.JOY_RANGE));
         idxAll = state.absIdx + (0:nSamples-1);
+        tProf  = tic;
         for c0 = 1:state.MAX_SAMPLES_PER_DGRAM:nSamples
             c1  = min(c0 + state.MAX_SAMPLES_PER_DGRAM - 1, nSamples);
             sel = c0:c1;
@@ -341,6 +357,8 @@ try
             end
         end
 
+        state.profSendMs = state.profSendMs + toc(tProf) * 1000;
+
         % Keep the last values for the log line below
         state.xRaw  = dataX(nSamples);
         state.yRaw  = dataY(nSamples);
@@ -350,14 +368,16 @@ try
     end   % if nRead > 0
 
 catch ME
-    warning('Joystick relay read error: %s', ME.message);
+    state.nReadErrors = state.nReadErrors + 1;
+    warning('Joystick relay read error (%d this session): %s', state.nReadErrors, ME.message);
 end
 
-% Advance by nRead, not nSamples: the read cursors above advanced by nRead
-% unconditionally, and absIdx has to track the CURSOR (real RZ2 samples
-% consumed) for index differences to mean elapsed time.
-state.absIdx        = state.absIdx        + nRead;
-state.nPkts         = state.nPkts         + nRead;
+% Advance by nDone, not nSamples and not nRead: absIdx has to track the
+% CURSOR (real RZ2 samples consumed) for index differences to mean elapsed
+% time, and the cursor only moved if the reads succeeded (see nDone above).
+state.absIdx        = state.absIdx        + nDone;
+state.nPkts         = state.nPkts         + nDone;
+state.profCycles    = state.profCycles    + 1;
 
 % --- Log every 5 seconds ---
 if toc(state.tLogRef) >= 5
@@ -385,6 +405,21 @@ if toc(state.tLogRef) >= 5
         % counted rather than silently corrupting every timestamp after it.
         fprintf('   nBackwardRecal: %d (recalibrations that pulled the cursor back)\n', ...
             state.nBackwardRecal);
+    end
+    % Per-cycle cost breakdown (2026-09-05). The sum of the three is the
+    % floor on this loop's period: at 169.4 Hz the budget is 5.9 ms, and on
+    % 05-Sep the loop was measured at ~23 ms per cycle without a single line
+    % saying where it went. Whichever of these dominates is the fix.
+    if state.profCycles > 0
+        fprintf('   cycle cost: idx %.2f ms + read %.2f ms + send %.2f ms = %.2f ms/cycle over %d cycles', ...
+            state.profIdxMs / state.profCycles, state.profReadMs / state.profCycles, ...
+            state.profSendMs / state.profCycles, ...
+            (state.profIdxMs + state.profReadMs + state.profSendMs) / state.profCycles, state.profCycles);
+        if state.nReadErrors > 0
+            fprintf(' | readErrors %d', state.nReadErrors);
+        end
+        fprintf('\n');
+        state.profIdxMs = 0; state.profReadMs = 0; state.profSendMs = 0; state.profCycles = 0;
     end
     if useWriteIdx
         % Relay-side lag: how many samples were waiting behind the write head

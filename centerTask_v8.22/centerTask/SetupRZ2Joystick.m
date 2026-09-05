@@ -125,6 +125,18 @@ catch
         % also maxSamplesPerDrain below, which governs how fast the backlog
         % actually drains once buffered.
         u.InputBufferSize = OrgGet(orgParams, 'rz2InputBufferSize', 4194304);
+        % InputDatagramPacketSize (2026-09-05): a DIFFERENT limit from the
+        % buffer above, and the one that was actually biting. It is the
+        % largest single datagram this object will hand back in one read,
+        % default 512 bytes; anything longer is cut there and the rest comes
+        % out of the NEXT fscanf as a fragment that starts mid-record. Each
+        % relay cycle was sending ~630 bytes. Result on sessPX-509: runs of
+        % exactly 18-19 samples, ~4 lost per datagram, 15% sustained loss,
+        % 66 "un-indexed" fragments, and two counted datagrams per real
+        % one. Raised here AND MAX_SAMPLES_PER_DGRAM lowered to 17 on
+        % Computer 1, so a datagram stays whole no matter which side's
+        % default someone resets.
+        u.InputDatagramPacketSize = OrgGet(orgParams, 'rz2InputDatagramPacketSize', 8192);
         fopen(u);
         useNewUDP = false;
     catch ME_udp
@@ -224,5 +236,10 @@ rz2 = struct( ...
     'clock', RZ2ClockMap( ...
         OrgGet(orgParams, 'rz2SampleRateHz', 939.0024), ...
         OrgGet(orgParams, 'rz2ClockWindow', 600), ...
-        OrgGet(orgParams, 'rz2ClockMaxRateDev', 0.10)));
+        OrgGet(orgParams, 'rz2ClockMaxRateDev', 0.01), ...
+        [], ...
+        OrgGet(orgParams, 'rz2ClockOffsetQuantile', 0.10), ...
+        OrgGet(orgParams, 'rz2ClockMaxSlewSec', 0.002), ...
+        OrgGet(orgParams, 'rz2ClockOffsetWindow', 100), ...
+        OrgGet(orgParams, 'rz2ClockMinSpanSec', 30)));
 end

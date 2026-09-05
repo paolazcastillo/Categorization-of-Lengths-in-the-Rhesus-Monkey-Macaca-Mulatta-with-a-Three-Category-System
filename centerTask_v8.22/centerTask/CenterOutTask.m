@@ -744,16 +744,12 @@ nFoilPending   = 0;   % rows in foilEventBuf waiting to be written this trial
 % --- Session mode: how many categories per trial -------------------------
 % '3cat'        : every trial is Short/Mid/Long (3 targets)        [default]
 % '2cat'        : every trial is Short/Long (2 targets)
-% 'alternate'   : alternate 2-cat and 3-cat in runs of FULL blockSize-trial
-%                 blocks (blockLenCats below is pinned to blockSize itself --
-%                 48 for full12, 12 for prototypes3 -- so a block finishes at
-%                 one category count before the next one can switch). How
-%                 many consecutive blocks of each: alternateBlocks2cat blocks
-%                 of 2-cat, then alternateBlocks3cat blocks of 3-cat, then
-%                 back to 2-cat, repeating for the rest of the session. Both
-%                 default to 1 (the original strict one-block-at-a-time
-%                 alternation); set from the console's "Blocks per segment"
-%                 fields, or orgParams.alternateBlocks2cat/3cat directly.
+% 'alternate'   : alternate 2-cat and 3-cat one FULL blockSize-trial block at
+%                 a time (block 1 = all 2-cat, block 2 = all 3-cat, block 3 =
+%                 all 2-cat, ...); blockLenCats below
+%                 is pinned to blockSize itself (48 for full12, 12 for
+%                 prototypes3), so a block finishes at one category count
+%                 before the next block switches to the other.
 %                 (named 'alternate', not 'blocks', so it doesn't collide with
 %                 the stopMode='blocks' 48-trial quota unit above)
 % 'interleaved' : 2-cat or 3-cat chosen at random each trial
@@ -801,20 +797,6 @@ blockLenCats = blockSize;   % one full block (see blockSize above) per category-
 % minPerLength) needs no session-mode exclusion; every length in the
 % active stimulus set is shown regardless of mode, only their category
 % grouping differs.
-
-% 'alternate' only: how many consecutive FULL blocks of 2-cat run before
-% switching to 3-cat, and how many of 3-cat before switching back, with
-% the pattern then repeating for the rest of the session (e.g. 10 and 10
-% runs 10 blocks of 2-cat, then 10 blocks of 3-cat, then 10 more of
-% 2-cat, ...). Default 1 each reproduces the original fixed
-% one-block-at-a-time alternation. Set from the console's "Blocks per
-% segment" fields next to Session mode; see ConfigOrgParams.m. Ignored by
-% every other sessionMode.
-alternateBlocks2cat = OrgGet(orgParams, 'alternateBlocks2cat', 1);
-alternateBlocks3cat = OrgGet(orgParams, 'alternateBlocks3cat', 1);
-alternateSegLen2  = blockLenCats * alternateBlocks2cat;
-alternateSegLen3  = blockLenCats * alternateBlocks3cat;
-alternateCycleLen = alternateSegLen2 + alternateSegLen3;
 
 % lengthCat2 (length -> bucket for the 2-category task) is resolved with the
 % stimulus set and the bar subset up in the SETUP section, alongside
@@ -884,7 +866,7 @@ for t = 1:seqSize
     else
         switch sessionMode
             case '2cat',        nc = 2;
-            case 'alternate',   nc = 2 + double(mod(t - 1, alternateCycleLen) >= alternateSegLen2);
+            case 'alternate',   nc = 2 + mod(floor((t - 1) / blockLenCats), 2);
             case 'interleaved', nc = 2 + double(rand < 0.5);
             otherwise,          nc = 3;          % '3cat'
         end
@@ -1139,7 +1121,9 @@ abortedByOperator = false;
 abortedByClock = false;
 skewMonitor = ClockSkewMonitor( ...
     OrgGet(orgParams, 'rz2SkewWarnSec',  0.05), ...
-    OrgGet(orgParams, 'rz2SkewAbortSec', 0.20));
+    OrgGet(orgParams, 'rz2SkewAbortSec', 0.20), ...
+    [], ...
+    OrgGet(orgParams, 'rz2SkewWindowFrames', 90));
 % Set true when the session ends because the trial sequence ran out before
 % the quota was met (see "Ran out of stimuli" below). A THIRD outcome, not a
 % variant of the two above: nobody stopped it and it did not finish its

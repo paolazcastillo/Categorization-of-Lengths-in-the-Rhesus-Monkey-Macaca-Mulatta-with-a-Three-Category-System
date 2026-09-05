@@ -45,9 +45,9 @@
   \draw[flow] (Lband_h.south) ++(0.3,0) |- ++(2.6,-0.45) |- ($(Lband_h.east)+(0,0)$);
 \end{scope}
 
-% ================= RIGHT: tiny RNN =================
+% ================= RIGHT: recurrent neural network =================
 \begin{scope}[xshift=6.6cm]
-  \node[font=\sffamily\large] at (2.6, 1.3) {Red recurrente diminuta};
+  \node[font=\sffamily\large] at (2.6, 1.3) {Red neuronal recurrente};
 
   \node[band, minimum width=5.2cm] (Rband_in) at (2.6,0) {};
   \node at (0.9,0) {$a_{t-1}$};
@@ -74,7 +74,7 @@
   $a_{t-1}$: categoría / dirección elegida en el trial anterior \quad
   $s_{t-1}$: longitud de la barra anterior \quad
   $r_{t-1}$: acierto anterior (recompensa)\\[2pt]
-  \colorbox{orange!25}{$s_t$}: longitud de la barra \textbf{actual} (deg VA), la entrada que no está en la tarea original \quad
+  \colorbox{orange!25}{$s_t$}: longitud de la barra \textbf{actual} (deg VA) \quad
   $d \in \{1,\dots,4\}$ \quad
   $P(a_t)$: probabilidad sobre \{Corta, Media, Larga\}
 };

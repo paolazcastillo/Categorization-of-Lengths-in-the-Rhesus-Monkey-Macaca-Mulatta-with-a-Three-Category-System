@@ -1,0 +1,62 @@
+\documentclass[tikz,border=10pt]{standalone}
+\input{centertask_style}
+
+\begin{document}
+\begin{tikzpicture}[ctpanel]
+% =====================================================================
+%  (a)  Trial-level model: cognitive model vs recurrent neural network, with s_t added
+% =====================================================================
+\node[font=\sffamily\bfseries\Large, anchor=west] at (-2.2,1.9) {a};
+
+\node[rowlab] at (-0.6, 0)   {Input};
+\node[rowlab] at (-0.6,-2.0) {Hidden};
+\node[rowlab] at (-0.6,-4.0) {Output};
+
+\begin{scope}[xshift=0cm]
+  \node[font=\sffamily\large] at (2.6, 1.3) {Cognitive model};
+  \node[band, minimum width=5.2cm] (Lin) at (2.6,0) {};
+  \node at (0.9,0) {$a_{t-1}$};
+  \node at (2.0,0) {$s_{t-1}$};
+  \node at (3.1,0) {$r_{t-1}$};
+  \node[now] at (4.35,0) {$s_{t}$};
+  \node[band, minimum width=5.2cm] (Lh) at (2.6,-2.0) {};
+  \node[unit] at (1.1,-2.0) {$V_t^{(1)}$};
+  \node at (2.6,-2.0) {$\cdots$};
+  \node[unit] at (4.1,-2.0) {$V_t^{(d)}$};
+  \node[band, minimum width=5.2cm] (Lout) at (2.6,-4.0) {$P(a_t)$};
+  \node (La) at (2.6,-5.3) {$a_t$};
+  \draw[flow] (Lin.south) -- (Lh.north);
+  \draw[flow] (Lh.south) -- (Lout.north);
+  \draw[flow] (Lout.south) -- (La);
+  \draw[flow] (Lh.south) ++(0.3,0) |- ++(2.6,-0.45) |- (Lh.east);
+\end{scope}
+
+\begin{scope}[xshift=6.6cm]
+  \node[font=\sffamily\large] at (2.6, 1.3) {Recurrent Neural Network};
+  \node[band, minimum width=5.2cm] (Rin) at (2.6,0) {};
+  \node at (0.9,0) {$a_{t-1}$};
+  \node at (2.0,0) {$s_{t-1}$};
+  \node at (3.1,0) {$r_{t-1}$};
+  \node[now] at (4.35,0) {$s_{t}$};
+  \node[band, minimum width=5.2cm] (Rh) at (2.6,-2.0) {};
+  \node[unit] at (1.1,-2.0) {$h_t^{(1)}$};
+  \node at (2.6,-2.0) {$\cdots$};
+  \node[unit] at (4.1,-2.0) {$h_t^{(d)}$};
+  \node[band, minimum width=5.2cm] (Rout) at (2.6,-4.0) {$P(a_t)$};
+  \node (Ra) at (2.6,-5.3) {$a_t$};
+  \draw[flow] (Rin.south) -- (Rh.north);
+  \draw[flow] (Rh.south) -- (Rout.north);
+  \draw[flow] (Rout.south) -- (Ra);
+  \draw[flow] (Rh.south) ++(0.3,0) |- ++(2.6,-0.45) |- (Rh.east);
+\end{scope}
+
+\node[align=left, anchor=north west, font=\sffamily\small, text=black!70] at (-1.6,-6.0) {%
+  $a_{t-1}$: category chosen on the previous trial \quad
+  $s_{t-1}$: previous bar length \quad
+  $r_{t-1}$: previous outcome (reward)\\[2pt]
+  \colorbox{catShort!55}{$s_t$}: \textbf{current} bar length (deg VA) \quad
+  $d \in \{1,\dots,4\}$ \quad
+  $P(a_t)$: probability over \{Short, Mid, Long\}
+};
+\end{tikzpicture}
+\end{document}

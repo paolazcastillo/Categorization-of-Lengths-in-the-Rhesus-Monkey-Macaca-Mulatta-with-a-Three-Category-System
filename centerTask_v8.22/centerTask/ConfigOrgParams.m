@@ -95,14 +95,6 @@ classdef ConfigOrgParams
             %                  Locks the session to 2cat. See ConfigBarLengths.m.
             orgParams.stimulusSet = 'full12';
             orgParams.sessionMode = '3cat';    % '2cat' | '3cat' | 'alternate' | 'interleaved'
-            % sessionMode = 'alternate' only: how many consecutive FULL
-            % blocks (blockSize trials each) of 2-cat run before switching to
-            % 3-cat, and how many blocks of 3-cat before switching back, the
-            % pattern then repeating for the rest of the session. Both
-            % default to 1 (the original strict one-block-at-a-time
-            % alternation). See CenterOutTask.m's alternateBlocks2cat/3cat.
-            orgParams.alternateBlocks2cat = 1;
-            orgParams.alternateBlocks3cat = 1;
             % Which lengths of the active stimulus set actually run. '' (or
             % 'all') = every one of them; '5' = a single length; '1-4,9-12'
             % = a mix of ranges and single indices. See ParseBarSubset.m.
@@ -327,16 +319,25 @@ classdef ConfigOrgParams
             % ClockSkewMonitor within a frame or two instead of silently
             % stretching every timestamp.
             orgParams.rz2SampleRateHz = 939.0024;
-            % Sliding window, in observations (one per drain, so ~60/s), for
-            % RZ2ClockMap's least-squares slope. 600 is ~10 s: long enough
-            % for a well-conditioned fit, short enough to follow a genuine
-            % change in the link.
+            % Sliding window, in observations, for RZ2ClockMap's least-
+            % squares slope. One observation per drain that delivered data
+            % AND left the queue empty: on this link that is ~16/s, not 60,
+            % because half the frames arrive with nothing (05-Sep), so 600
+            % is ~40 s, which is fine for a slope but is exactly why the
+            % offset has its own, short window below.
             orgParams.rz2ClockWindow = 600;
             % How far the estimated rate may travel from the seed before it
             % is clamped, as a fraction. A corrupt run of indices then
             % cannot rewrite the time base wholesale; the residual skew
             % grows instead and the monitor below stops the session.
-            orgParams.rz2ClockMaxRateDev = 0.10;
+            % 0.10 -> 0.01 (2026-09-05): the seed is now rig-confirmed to
+            % ~0.04%, so a fit that wants to leave it by more than 1% is
+            % noise or a broken index stream, not information.
+            orgParams.rz2ClockMaxRateDev = 0.01;
+            % Index span, in seconds of samples, the slope window must
+            % cover before the estimated slope replaces the seed. Below
+            % this the seed is the better estimate on a jittery link.
+            orgParams.rz2ClockMinSpanSec = 30;
             % Runtime clock-skew guard (ClockSkewMonitor.m). Warn threshold
             % is one epoch's worth of jitter; abort threshold is the point
             % past which every sample-anchored window is measurably shorter
@@ -344,6 +345,28 @@ classdef ConfigOrgParams
             % says it is. Both in seconds.
             orgParams.rz2SkewWarnSec  = 0.05;
             orgParams.rz2SkewAbortSec = 0.20;
+            % Frames in the sustained-skew window the abort is judged on
+            % (median, ~1.5 s at 60 fps). A single stalled frame cannot trip
+            % it; a persistent backlog cannot hide from it. See
+            % ClockSkewMonitor.m, 2026-09-05 note.
+            orgParams.rz2SkewWindowFrames = 90;
+            % Residual quantile RZ2ClockMap anchors its offset on (0.10 =
+            % 10th percentile). 0 would be the strict minimum, which one
+            % early packet can drag; see RZ2ClockMap.m, 2026-09-05 note.
+            orgParams.rz2ClockOffsetQuantile = 0.10;
+            % Largest move, in seconds, one refit may apply to the time of
+            % the newest sample. Keeps the map from stepping; 2 ms at ~60
+            % fits/s still closes a 150 ms error in ~1.3 s.
+            orgParams.rz2ClockMaxSlewSec = 0.002;
+            % Most recent observations the offset quantile is taken over.
+            % Separate from rz2ClockWindow on purpose: the slope needs a
+            % long span, the offset needs a window that actually slides.
+            % See RZ2ClockMap.m, 2026-09-05 note on the ratchet.
+            orgParams.rz2ClockOffsetWindow = 100;
+            % Largest single datagram the legacy udp() object returns whole
+            % (bytes). Its default of 512 was truncating every relay
+            % datagram; see SetupRZ2Joystick.m, 2026-09-05 note.
+            orgParams.rz2InputDatagramPacketSize = 8192;
             % Ceiling on samples ReadRZ2Joystick.m drains in one frame. A
             % healthy link delivers ~16 samples/frame at 60 Hz, so any value
             % well above that leaves room to catch up after a hiccup while

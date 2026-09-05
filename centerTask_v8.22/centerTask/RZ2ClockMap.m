@@ -25,11 +25,25 @@ classdef RZ2ClockMap < handle
 % newest sample is used because it is the least delayed one available: its
 % transport latency is the closest to the link's floor.
 %
-%   slope   : ordinary least squares over a sliding window of the last
-%             windowLen observations. OLS is unbiased for the slope even
-%             though the observations are contaminated by latency, because
-%             the contamination is a level, not a trend, as long as the
-%             backlog is stationary.
+%   slope   : the SEED until the window spans at least minSpanSec of
+%             samples, then ordinary least squares over the window, clamped
+%             to +-maxRateDev of the seed. OLS is unbiased for the slope
+%             even though the observations are contaminated by latency,
+%             because the contamination is a level, not a trend, as long
+%             as the backlog is stationary -- but unbiased is not precise.
+%
+%             SEED FIRST (2026-09-05). With the ~150 ms rms arrival jitter
+%             this link actually has, the standard error of an OLS slope
+%             over a 2 s span is ~5%: for the first seconds of sessPX-509
+%             the map ran on a slope that was noise, its timeline wandered
+%             at tens of ms per second, and the slew limit cannot correct a
+%             SLOPE error (it caps the step at one index, the error
+%             re-accumulates over the next batch). The seed is now known to
+%             ~+-0.04% from the rig itself, so it is a better slope than
+%             anything a short window can produce; the residual 400 ppm and
+%             crystal drift are 0.4 ms/s, which the offset anchor tracks
+%             trivially. The window earns the right to change the slope
+%             only once its span makes the estimate better than the seed.
 %
 %             A GROWING backlog is the exception, and it is the dangerous
 %             one. With t_arr(n) = t_cap(n) + L(n) and L increasing, the
@@ -49,12 +63,43 @@ classdef RZ2ClockMap < handle
 %             grows until the monitor stops the session. Refusing to
 %             estimate is the correct response to data that cannot support
 %             the estimate.
-%   offset  : anchored on the MINIMUM residual of the window, not on the
+%   offset  : anchored on a LOW QUANTILE of the window residuals, not on the
 %             OLS intercept. The OLS intercept absorbs the MEAN transport
-%             latency; the minimum residual tracks the fastest observed
-%             path, which is the standard minimum-delay filter used in clock
-%             synchronisation. This removes the mean-latency bias and leaves
-%             only the (unobservable, constant) floor latency of the link.
+%             latency; a low quantile tracks the fast path, which is the
+%             standard minimum-delay idea used in clock synchronisation.
+%             This removes the mean-latency bias and leaves only the
+%             (unobservable, constant) floor latency of the link.
+%
+%             A QUANTILE, NOT THE MINIMUM (2026-09-05). The first version
+%             used min(). On the rig the link turned out to carry 0-225 ms
+%             of arrival jitter (Computer 1's relay loop saturates at ~43 Hz
+%             with 225 ms stalls), and min() is maximally sensitive to a
+%             single early arrival: one such pair pulled the offset back by
+%             up to 166 ms, held it there for the life of the window, and
+%             the monotone guard below then froze the output for ~150
+%             samples. The 10th percentile ignores the odd early packet and
+%             still sits close to the floor.
+%
+%             OVER ITS OWN, SHORT WINDOW (offsetWindow, default 100), not
+%             over the slope window. The slope needs SPAN, so its window is
+%             long; the offset needs to SLIDE, so its window is short, and
+%             the two must not share one length. On sessPX-509 the 600-
+%             observation window never filled (this link yields ~16
+%             accepted observations/s, half the frames arrive empty), so
+%             the anchor was a running minimum over a growing sample -- a
+%             ratchet that pulled the offset back 226 ms in 17 s, inflated
+%             the reported skew at 12.6 ms/s, and produced 177 monotone
+%             clamps. A window that actually slides cannot ratchet.
+%
+%   slew    : the line is not allowed to JUMP. Each refit may move the
+%             time assigned to the newest index by at most maxSlewSec;
+%             beyond that the intercept is pulled back so the move equals
+%             the limit, and the rest is applied over later fits. This is
+%             how every disciplined clock behaves (a PLL slews, it does not
+%             step) and it is what makes the output monotone by
+%             construction rather than by clamping. The first fit after
+%             warm-up is exempt: it replaces a single-pair anchor and is
+%             allowed to snap.
 %
 % WHAT IS NOT FIXED HERE. The floor latency itself is invisible from this
 % side: a link that is uniformly 8 ms slow looks exactly like a link that is
@@ -77,6 +122,12 @@ classdef RZ2ClockMap < handle
         windowLen               % observations kept for the sliding fit
         maxRateDev              % fractional band the slope is clamped to around the seed
         minObs                  % observations required before the first fit
+        minSpanSec              % index span the window must cover before the slope may leave the seed
+        nSlopeFits              % fits that updated the slope (span condition met)
+        offsetQuantile          % residual quantile the offset is anchored on (0 = strict minimum)
+        offsetWindow            % most recent observations the offset quantile is taken over
+        maxSlewSec              % largest move of t(newest idx) one refit may apply
+        nSlewLimited            % refits whose move was cut to maxSlewSec
         nObs                    % observations accepted
         nObsRejected            % observations refused because the queue was not clear
         nFits                   % refits performed
@@ -96,14 +147,18 @@ classdef RZ2ClockMap < handle
     end
 
     methods
-        function obj = RZ2ClockMap(seedRateHz, windowLen, maxRateDev, minObs)
+        function obj = RZ2ClockMap(seedRateHz, windowLen, maxRateDev, minObs, offsetQuantile, maxSlewSec, offsetWindow, minSpanSec)
             if nargin < 1 || isempty(seedRateHz) || ~isfinite(seedRateHz) || seedRateHz <= 0
                 error('RZ2ClockMap:badSeed', ...
                     'A positive, finite seed sample rate is required (got %g).', seedRateHz);
             end
             if nargin < 2 || isempty(windowLen), windowLen = 600; end
-            if nargin < 3 || isempty(maxRateDev), maxRateDev = 0.10; end
+            if nargin < 3 || isempty(maxRateDev), maxRateDev = 0.01; end
             if nargin < 4 || isempty(minObs), minObs = 30; end
+            if nargin < 5 || isempty(offsetQuantile), offsetQuantile = 0.10; end
+            if nargin < 6 || isempty(maxSlewSec), maxSlewSec = 0.002; end
+            if nargin < 7 || isempty(offsetWindow), offsetWindow = 100; end
+            if nargin < 8 || isempty(minSpanSec), minSpanSec = 30; end
 
             obj.seedSecPerSample   = 1 / seedRateHz;
             obj.secPerSample       = 1 / seedRateHz;
@@ -111,6 +166,12 @@ classdef RZ2ClockMap < handle
             obj.windowLen          = max(round(windowLen), 2);
             obj.maxRateDev         = abs(maxRateDev);
             obj.minObs             = max(round(minObs), 2);
+            obj.offsetQuantile     = min(max(offsetQuantile, 0), 0.5);
+            obj.maxSlewSec         = abs(maxSlewSec);
+            obj.offsetWindow       = max(round(offsetWindow), 2);
+            obj.minSpanSec         = abs(minSpanSec);
+            obj.nSlopeFits         = 0;
+            obj.nSlewLimited       = 0;
             obj.idxBuf             = zeros(obj.windowLen, 1);
             obj.tBuf               = zeros(obj.windowLen, 1);
             obj.head               = 0;
@@ -191,7 +252,9 @@ classdef RZ2ClockMap < handle
                 'nObservations',         obj.nObs, ...
                 'nObservationsRejected', obj.nObsRejected, ...
                 'nFits',                 obj.nFits, ...
+                'nSlopeFits',            obj.nSlopeFits, ...
                 'nSlopeClamped',         obj.nSlopeClamped, ...
+                'nSlewLimited',          obj.nSlewLimited, ...
                 'nMonotoneClamped',      obj.nMonotoneClamped, ...
                 'worstMonotoneClampSec', obj.worstMonotoneClamp, ...
                 'residualRmsSec',        obj.residualRms);
@@ -210,19 +273,49 @@ classdef RZ2ClockMap < handle
             if ~isfinite(sxx) || sxx <= 0
                 return;
             end
-            a = sum(xc .* (y - ym)) / sxx;
-            aLo = obj.seedSecPerSample * (1 - obj.maxRateDev);
-            aHi = obj.seedSecPerSample * (1 + obj.maxRateDev);
-            if a < aLo || a > aHi
-                a = min(max(a, aLo), aHi);
-                obj.nSlopeClamped = obj.nSlopeClamped + 1;
+            spanSamples = max(x) - min(x);
+            if spanSamples >= obj.minSpanSec / obj.seedSecPerSample
+                a = sum(xc .* (y - ym)) / sxx;
+                aLo = obj.seedSecPerSample * (1 - obj.maxRateDev);
+                aHi = obj.seedSecPerSample * (1 + obj.maxRateDev);
+                if a < aLo || a > aHi
+                    a = min(max(a, aLo), aHi);
+                    obj.nSlopeClamped = obj.nSlopeClamped + 1;
+                end
+                obj.nSlopeFits = obj.nSlopeFits + 1;
+            else
+                a = obj.secPerSample;
             end
             b = ym - a * xm;
             r = y - (b + a * x);
-            rMin = min(r);
+
+            % Offset quantile over the most RECENT offsetWindow residuals
+            % only. The ring is 1:n valid with head at obj.head; walk back
+            % from head to collect the last m entries in arrival order.
+            m = min(n, obj.offsetWindow);
+            recent = mod(obj.head - (m - 1:-1:0) - 1, n) + 1;
+            rr = r(recent);
+            rs = sort(rr);
+            k  = min(m, max(1, round(obj.offsetQuantile * m)));
+            rQ = rs(k);
+            bNew = b + rQ;
+
+            % Slew limit, evaluated where it matters: at the newest index
+            % in the window, which is where the next sample will be stamped.
+            xNew = x(obj.head);
+            if obj.nFits > 0
+                tOld  = obj.offset + obj.secPerSample * xNew;
+                tNew  = bNew + a * xNew;
+                move  = tNew - tOld;
+                if abs(move) > obj.maxSlewSec
+                    bNew = bNew - (move - sign(move) * obj.maxSlewSec);
+                    obj.nSlewLimited = obj.nSlewLimited + 1;
+                end
+            end
+
             obj.secPerSample = a;
-            obj.offset       = b + rMin;
-            obj.residualRms  = sqrt(mean((r - rMin) .^ 2));
+            obj.offset       = bNew;
+            obj.residualRms  = sqrt(mean((rr - rQ) .^ 2));
             obj.nFits        = obj.nFits + 1;
         end
     end

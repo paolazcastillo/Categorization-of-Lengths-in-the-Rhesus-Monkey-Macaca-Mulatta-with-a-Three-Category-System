@@ -347,6 +347,17 @@ state.widxNew         = 0;       % samples waiting per cycle (relay-side backlog
 state.widxFellBack    = false;   % warn-once flag if a tag read fails and we use legacy pacing
 state.nHeadBehind     = 0;       % times the head read BEHIND the cursor (see StepJoystickRelay.m)
 
+% Per-cycle cost breakdown (2026-09-05), accumulated by StepJoystickRelay.m
+% and printed in its 5-second log line. Added because the loop measured
+% 22.87 ms per relay call on 05-Sep (loopHz 39-45 against a 169.4 Hz target)
+% and nothing said which of the four SynapseAPI round trips or the UDP send
+% was paying for it. These are the numbers that decide the fix.
+state.profIdxMs   = 0;    % write-index reads (two getParameterValue calls)
+state.profReadMs  = 0;    % buffer reads (two getParameterValues calls)
+state.profSendMs  = 0;    % sprintf + fwrite/write of the datagram(s)
+state.profCycles  = 0;    % cycles that did work since the last log line
+state.nReadErrors = 0;    % readBufWindow failures (see the absIdx note in StepJoystickRelay.m)
+
 % --- UDP init ---
 fprintf('Opening UDP to %s:%d...\n', state.REMOTE_HOST, state.UDP_PORT);
 try
@@ -385,18 +396,38 @@ catch
     % answer, empirically, whenever it matters: if it stays 0 across a
     % session with a real backlog/recovery event, 4 MB was enough; if it
     % ever prints, it wasn't, and this is the number to raise again.
+    % OutputDatagramPacketSize (2026-09-05): the legacy object's per-datagram
+    % ceiling, default 512 bytes, which silently splits or truncates any
+    % single fwrite larger than that. See the MAX_SAMPLES_PER_DGRAM note
+    % below; that constant keeps datagrams under 512 regardless, this is
+    % the second lock on the same door.
     state.udpObj    = udp(state.REMOTE_HOST, state.UDP_PORT, 'LocalPort', state.RELAY_LOCAL_PORT, ...
-        'OutputBufferSize', 4194304);
+        'OutputBufferSize', 4194304, 'OutputDatagramPacketSize', 8192);
     fopen(state.udpObj);
     state.useNewUDP = false;
 end
 % Max samples packed into a single UDP datagram. Time-based pacing can read
 % many samples in one cycle (a slow cycle catches up), so the send loop below
-% splits them across several datagrams rather than one oversized one; 40
-% samples is ~1.4 KB, comfortably under a 1500-byte MTU and the buffer above.
+% splits them across several datagrams rather than one oversized one.
 % Computer 2 already handles many samples per datagram and many datagrams per
 % frame (ReadRZ2Joystick.m).
-state.MAX_SAMPLES_PER_DGRAM = 40;
+%
+% 40 -> 17, 2026-09-05. The MTU was never the binding limit; 512 BYTES was.
+% Both machines use the legacy udp() object (udpport() is unavailable on
+% either), and that object's OutputDatagramPacketSize (here) and
+% InputDatagramPacketSize (Computer 2) both DEFAULT TO 512. A cycle at the
+% ~44 Hz this loop actually achieves carries ~21 samples of ~27 bytes = ~630
+% bytes, so every datagram was being cut at byte 512: ~19 samples arrive
+% whole, the record straddling the cut is torn, and whatever follows it is
+% read as a separate fragment that usually fails to parse. Measured on
+% sessPX-509 (05-Sep-2026): contiguous runs in the export peak at exactly
+% 18-19 samples, index gaps between runs have a median of 4, 15% of samples
+% never arrive, and Computer 2 counts two "datagrams" per cycle. That is the
+% sustained ~15% loss first seen on 31-Aug and blamed on the network.
+% 17 samples x 30 bytes worst case = 510 < 512, so a datagram is whole no
+% matter which side's limit applies. The packet-size properties below are
+% raised too, but this constant is the one that cannot be misconfigured.
+state.MAX_SAMPLES_PER_DGRAM = 17;
 if state.useNewUDP
     fprintf('UDP OK (udpport interface, source port %d)\n', state.RELAY_LOCAL_PORT);
 else
