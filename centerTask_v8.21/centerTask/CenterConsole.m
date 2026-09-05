@@ -113,7 +113,7 @@ classdef CenterConsole < handle
             % flicker while it's under construction.
             self.fig = figure('Name', 'Center Task Console', 'NumberTitle', 'off', ...
                 'MenuBar', 'none', 'ToolBar', 'none', 'Resize', 'off', ...
-                'Color', [0.94 0.94 0.96], 'Position', [80 60 1240 745], ...
+                'Color', [0.94 0.94 0.96], 'Position', [80 60 1240 785], ...
                 'Visible', 'off', 'Tag', CenterConsole.figTag, ...
                 'CloseRequestFcn', @(~, ~) self.close_Callback());
             % How the singleton check above finds this instance from its
@@ -390,6 +390,28 @@ classdef CenterConsole < handle
                 allValid = allValid && geomValid;
                 sessionModes = get(self.ui.popSessionMode, 'String');
                 params.sessionMode = sessionModes{get(self.ui.popSessionMode, 'Value')};
+                % Alternate mode's blocks-per-segment: gathered and validated
+                % unconditionally (same treatment Max attempts gets from
+                % Retries) rather than only while 'alternate' is selected, so
+                % a value typed in survives switching to another mode and
+                % back. Must be a positive integer -- CenterOutTask.m uses it
+                % directly as a block-count multiplier.
+                blocks2Val = str2double(get(self.ui.edAlternateBlocks2cat, 'String'));
+                if isnan(blocks2Val) || blocks2Val < 1 || blocks2Val ~= round(blocks2Val)
+                    set(self.ui.edAlternateBlocks2cat, 'BackgroundColor', [1 0.7 0.7]);
+                    allValid = false;
+                else
+                    set(self.ui.edAlternateBlocks2cat, 'BackgroundColor', [1 1 1]);
+                end
+                params.alternateBlocks2cat = blocks2Val;
+                blocks3Val = str2double(get(self.ui.edAlternateBlocks3cat, 'String'));
+                if isnan(blocks3Val) || blocks3Val < 1 || blocks3Val ~= round(blocks3Val)
+                    set(self.ui.edAlternateBlocks3cat, 'BackgroundColor', [1 0.7 0.7]);
+                    allValid = false;
+                else
+                    set(self.ui.edAlternateBlocks3cat, 'BackgroundColor', [1 1 1]);
+                end
+                params.alternateBlocks3cat = blocks3Val;
                 [params.stimulusSet, numLengths] = self.stimulusSetSelection();
                 % 0 = off (categorization), 1 = match, 2 = match + foil.
                 params.trainingPhase = get(self.ui.popTrainingPhase, 'Value') - 1;
@@ -454,7 +476,13 @@ classdef CenterConsole < handle
         % =====================================================================
 
         function buildSessionPanel(self)
-            y = 745 - 20;
+            % 785 (not the figure's own 745-since-grown height) -- see
+            % buildTaskParamsPanel's "Blocks per segment" row: that panel
+            % grew 40px taller to fit it, so this panel (and the figure
+            % itself) shifted up by the same 40px to keep every original
+            % gap/margin unchanged. Keep the two figure-height literals in
+            % step if either panel is resized again.
+            y = 785 - 20;
             pSession = uipanel('Parent', self.fig, 'Title', 'Session', self.titleFont{:}, ...
                 'BackgroundColor', self.panelBG, 'Units', 'pixels', 'Position', [20 y-95 1200 100]);
 
@@ -572,9 +600,17 @@ classdef CenterConsole < handle
             % a default; it updates both what this console shows on open
             % AND what an engine falls back to if a field is ever missing.
             d = ConfigOrgParams.getTaskDefaults();
+            % Deliberately still the ORIGINAL 745 literal, not the figure's
+            % current (785) height: this anchors the panel's BOTTOM edge,
+            % which stays put -- only the panel's HEIGHT below grew (435 ->
+            % 475, see the "Blocks per segment" row further down), adding
+            % its extra 40px as headroom above the existing top row instead
+            % of moving anything already laid out. buildSessionPanel's y
+            % moved up by that same 40px so the gap between the two panels
+            % is unchanged.
             y = 745 - 20 - 100 - 15;
             p = uipanel('Parent', self.fig, 'Title', 'Task parameters', self.titleFont{:}, ...
-                'BackgroundColor', self.panelBG, 'Units', 'pixels', 'Position', [20 y-430 1200 435]);
+                'BackgroundColor', self.panelBG, 'Units', 'pixels', 'Position', [20 y-430 1200 475]);
 
             uicontrol('Parent', p, 'Style', 'text', 'String', 'Reward valve time (s)', self.labelFont{:}, ...
                 'BackgroundColor', self.panelBG, 'Position', [15 392 150 18], 'HorizontalAlignment', 'left');
@@ -631,11 +667,35 @@ classdef CenterConsole < handle
             sessionModeValue = find(strcmpi(sessionModeStrings, d.sessionMode), 1);
             self.ui.popSessionMode = uicontrol('Parent', p, 'Style', 'popupmenu', ...
                 'String', sessionModeStrings, 'Position', [608 390 100 22], 'Value', sessionModeValue, ...
+                'Callback', @(~, ~) self.sessionModeSelect_Callback(), ...
                 'TooltipString', ['How many categories a trial draws from. Locked to 3cat while a ' ...
                 'reduced Bar set (prototypes or extremes) is selected: those carry one length per ' ...
                 'category, so a 2-category framing would only regroup the three prototypes instead ' ...
                 'of testing a Short/Long boundary. Pick the full 12-length set to use the other ' ...
                 'modes.']);
+
+            % 'alternate' only: how many consecutive FULL blocks of each
+            % category count run before switching (see CenterOutTask.m's
+            % alternateBlocks2cat/3cat). Greyed out by sessionModeSelect_Callback
+            % for every other mode -- the fields are still always gathered on
+            % Start (see gatherParams below) so a value typed in while
+            % 'alternate' was selected survives a round trip through another
+            % mode, exactly like Max attempts follows Retries.
+            uicontrol('Parent', p, 'Style', 'text', 'String', 'Alternate: blocks/segment', ...
+                self.labelFont{:}, 'BackgroundColor', self.panelBG, ...
+                'Position', [510 444 200 18], 'HorizontalAlignment', 'left');
+            uicontrol('Parent', p, 'Style', 'text', 'String', '2cat', self.labelFont{:}, ...
+                'BackgroundColor', self.panelBG, 'Position', [510 420 35 18], 'HorizontalAlignment', 'left');
+            self.ui.edAlternateBlocks2cat = self.mkEdit(p, num2str(d.alternateBlocks2cat), [548 418 45 22]);
+            uicontrol('Parent', p, 'Style', 'text', 'String', '3cat', self.labelFont{:}, ...
+                'BackgroundColor', self.panelBG, 'Position', [600 420 35 18], 'HorizontalAlignment', 'left');
+            self.ui.edAlternateBlocks3cat = self.mkEdit(p, num2str(d.alternateBlocks3cat), [638 418 45 22]);
+            set([self.ui.edAlternateBlocks2cat, self.ui.edAlternateBlocks3cat], 'TooltipString', ...
+                ['Session mode ''alternate'' only: how many consecutive FULL blocks (blockSize trials ' ...
+                'each) of 2-cat run before switching to 3-cat, and how many blocks of 3-cat before ' ...
+                'switching back -- e.g. 10 and 10 runs 10 blocks of 2-cat, then 10 blocks of 3-cat, ' ...
+                'then 10 more of 2-cat, ... for the rest of the session. Both default to 1, the ' ...
+                'original strict one-block-at-a-time alternation. Ignored by every other Session mode.']);
 
             uicontrol('Parent', p, 'Style', 'text', 'String', 'Input source', self.labelFont{:}, ...
                 'BackgroundColor', self.panelBG, 'Position', [715 392 80 18], 'HorizontalAlignment', 'left');
@@ -1159,7 +1219,31 @@ classdef CenterConsole < handle
                 set(self.ui.popSessionMode, 'Value', find(strcmpi(modes, '3cat'), 1), ...
                     'Enable', 'off');
             end
+            self.sessionModeSelect_Callback();   % the mode may have just been forced -> re-grey the blocks fields
             self.taskTypeSelect_Callback();   % the length count just changed -> refresh the budget
+        end
+
+        function sessionModeSelect_Callback(self)
+            % The "Alternate: blocks/segment" fields only mean anything
+            % under sessionMode 'alternate' (interleaved picks 2cat/3cat at
+            % random per trial; plain 2cat/3cat never switch at all) -- grey
+            % them out otherwise, the same "disabled but still gathered"
+            % treatment Max attempts gets from retriesToggle_Callback, so a
+            % typed value is never silently ignored without the field
+            % visibly saying so. Called both from this popup's own Callback
+            % and from stimulusSetSelect_Callback, since a reduced Bar set
+            % can force Session mode away from 'alternate' without the
+            % operator ever touching this popup directly.
+            if ~isfield(self.ui, 'edAlternateBlocks2cat')
+                return;   % Task parameters panel not built yet
+            end
+            modes = get(self.ui.popSessionMode, 'String');
+            isAlternate = strcmpi(modes{get(self.ui.popSessionMode, 'Value')}, 'alternate');
+            if isAlternate
+                set([self.ui.edAlternateBlocks2cat, self.ui.edAlternateBlocks3cat], 'Enable', 'on');
+            else
+                set([self.ui.edAlternateBlocks2cat, self.ui.edAlternateBlocks3cat], 'Enable', 'off');
+            end
         end
 
         function applyTaskTypeEnableStates(self)

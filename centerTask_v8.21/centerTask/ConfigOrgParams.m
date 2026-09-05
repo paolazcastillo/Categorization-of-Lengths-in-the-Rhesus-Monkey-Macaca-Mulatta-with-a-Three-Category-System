@@ -95,6 +95,14 @@ classdef ConfigOrgParams
             %                  Locks the session to 2cat. See ConfigBarLengths.m.
             orgParams.stimulusSet = 'full12';
             orgParams.sessionMode = '3cat';    % '2cat' | '3cat' | 'alternate' | 'interleaved'
+            % sessionMode = 'alternate' only: how many consecutive FULL
+            % blocks (blockSize trials each) of 2-cat run before switching to
+            % 3-cat, and how many blocks of 3-cat before switching back, the
+            % pattern then repeating for the rest of the session. Both
+            % default to 1 (the original strict one-block-at-a-time
+            % alternation). See CenterOutTask.m's alternateBlocks2cat/3cat.
+            orgParams.alternateBlocks2cat = 1;
+            orgParams.alternateBlocks3cat = 1;
             % Which lengths of the active stimulus set actually run. '' (or
             % 'all') = every one of them; '5' = a single length; '1-4,9-12'
             % = a mix of ranges and single indices. See ParseBarSubset.m.
