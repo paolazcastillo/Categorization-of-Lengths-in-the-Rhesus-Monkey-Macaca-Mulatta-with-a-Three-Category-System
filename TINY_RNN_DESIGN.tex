@@ -549,6 +549,85 @@ $\vect{h}_t \in \mathbb{R}^d$.
   \label{fig:gru}
 \end{figure}
 
+\paragraph{The two gates, step by step.} A GRU unit does one thing per trial: it
+decides how much of what it remembered to keep and how much to replace with a fresh
+proposal. Read Eqs.~\eqref{eq:gru-r}--\eqref{eq:gru-h} in the order in which the cell
+computes them.
+
+\begin{enumerate}[leftmargin=*]
+\item \textbf{The relevance (reset) gate $\vect{r}_t$ asks: is the past relevant to what
+      I am about to propose?} It looks at the new input $\vect{x}_t$ and at the old
+      state $\vect{h}_{t-1}$ and returns a number between 0 and 1 per unit. That number
+      multiplies the old state \emph{before} the candidate is computed
+      (Eq.~\eqref{eq:gru-c}). With $r_t = 1$ the candidate is built from the input and
+      the full memory; with $r_t = 0$ the candidate is built from the input alone, as if
+      the session had just started. It does not erase the memory; it only hides it from
+      the proposal.
+\item \textbf{The candidate $\tilde{\vect{h}}_t$ is the proposal.} It is what the unit
+      would become if it listened only to this trial (and to whatever part of the past
+      the relevance gate let through). It is a $\tanh$, so it lives in $(-1, 1)$.
+\item \textbf{The update gate $\vect{z}_t$ asks: how much of the proposal do I accept?}
+      It also looks at $\vect{x}_t$ and $\vect{h}_{t-1}$ and returns a number between 0
+      and 1 per unit. Eq.~\eqref{eq:gru-h} then mixes: a fraction $z_t$ of the new value
+      comes from the proposal, a fraction $1 - z_t$ is the old value carried over
+      unchanged. With $z_t = 0$ the unit is frozen; with $z_t = 1$ it is overwritten.
+\end{enumerate}
+
+The two gates answer different questions and can take any combination of values.
+$r_t = 0$ with $z_t = 1$ is a hard reset: the unit is overwritten by a proposal that
+ignored the past. $r_t = 1$ with $z_t$ small is slow integration: the proposal uses the
+past and only a little of it is accepted each trial. $z_t = 0$ is pure memory,
+whatever $r_t$ does. A vanilla unit has only the last equation with $z_t$ fixed at one
+and $r_t$ fixed at one, which is why it cannot both hold and reset.
+
+\paragraph{In the words of this task.} Take $d = 1$ and read the single unit as the
+displacement of the Short/Mid criterion from its resting value.
+
+\begin{itemize}[leftmargin=*]
+\item On an ordinary correct trial the animal has no reason to move its criterion. The
+      gates should give $z_t$ small: keep what there is.
+\item After an error near the boundary, the criterion should shift towards the previous
+      bar. The gates should give $r_t$ high (the proposal starts from the current
+      displacement) and $z_t$ moderate (accept part of the shift). This is the
+      criterion-shift rule of M2, Eq.~\eqref{eq:m2}, written as gate values.
+\item On the first trial after a block switch, the old criterion is useless. The gates
+      should give $r_t$ low and $z_t$ high: propose from the cue alone and accept it.
+      This is the reset that lets a rule switch act within one trial
+      (Section~\ref{sec:rule}).
+\item Because the gates are functions of the input, the same unit can do all three on
+      different trials. That is what the network has to learn, and it is what the gate
+      diagnostics of Section~\ref{sec:interp} read back out.
+\end{itemize}
+
+\paragraph{Notation across sources.} The same cell appears under two sets of names.
+Table~\ref{tab:gru-notation} maps them. Some introductory treatments first present a
+simplified GRU that has only the update gate and then add the relevance gate; the
+network here is the full cell, which is what \texttt{nn.GRUCell} implements and what
+Ji-An et al.\ use.
+
+\begin{table}[H]
+  \centering\small
+  \caption{Names of the GRU quantities in the deep-learning course notation and in
+  this document.}
+  \label{tab:gru-notation}
+  \begin{tabular}{llll}
+    \toprule
+    Course notation & This document & Equation & Meaning \\
+    \midrule
+    $\Gamma_u$, update gate     & $\vect{z}_t$        & \eqref{eq:gru-z} & how much of the state is rewritten \\
+    $\Gamma_r$, relevance gate  & $\vect{r}_t$, reset gate & \eqref{eq:gru-r} & how much of the old state the candidate reads \\
+    $\tilde{c}^{\langle t\rangle}$, candidate & $\tilde{\vect{h}}_t$ & \eqref{eq:gru-c} & the state the input would propose \\
+    $c^{\langle t\rangle} = a^{\langle t\rangle}$ & $\vect{h}_t$ & \eqref{eq:gru-h} & the state passed to the next trial \\
+    $x^{\langle t\rangle}$      & $\vect{x}_t$        & Table~\ref{tab:inputs} & the input of the trial \\
+    $a^{\langle 0\rangle}$      & $\vect{h}_0$        & & the learned initial state \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The final equation is the same in both notations up to the order of the terms:
+$c^{\langle t\rangle} = \Gamma_u \odot \tilde{c}^{\langle t\rangle} + (1 - \Gamma_u) \odot c^{\langle t-1\rangle}$
+is Eq.~\eqref{eq:gru-h} with $\Gamma_u = \vect{z}_t$.
+
 \begin{table}[H]
   \centering\small
   \caption{Decisions about the recurrent cell.}
@@ -802,7 +881,9 @@ is where the scientific gain is. Then $\Delta t$, if needed.
     Element & Value & Justification \\
     \midrule
     Loss & negative log-likelihood per trial, Eq.~\eqref{eq:loss} & It is what is compared across models \\
-    Optimiser & Adam, learning rate $10^{-3}$, gradient clipping at 1.0 & Standard; sequences are long and clipping prevents blow-ups \\
+    Optimiser & Adam, learning rate $10^{-3}$ & Standard \\
+    Gradient clipping & global norm clipped at 1.0, before the Adam update & Gradients run through 240--465 steps; Section~\ref{sec:clip} \\
+    Clipping diagnostic & fraction of steps on which the norm exceeded 1.0, logged per fit & Below 1\,\% the training is stable and clipping is only insurance; above that, lower the learning rate before raising the threshold \\
     Batch & one whole session per sequence; batches of 4 sessions & The state must run through the session uncut, so that carry-over across blocks is observable \\
     Early stopping & on validation NLL, patience 50 epochs & Replaces a fixed epoch count; prevents memorisation \\
     Regularisation & L2 $10^{-4}$ on all weights; L1 $10^{-4}$ on $\vect{w}_g$, $\vect{w}_1$, $\vect{w}_2$ & Pushes state-to-read-out connections that do not help to zero, which simplifies interpretation \\
@@ -817,6 +898,44 @@ is where the scientific gain is. Then $\Delta t$, if needed.
 Trials without a response and retries remain in the sequence as input to the following
 trial; the mask $m_t = 0$ only removes them from the loss. Removing them from the
 sequence would break the history the subject actually experienced.
+
+\subsection{Gradient clipping}
+\label{sec:clip}
+
+Gradient clipping is kept even though the network is tiny, for a reason that comes from
+the sequence length rather than from the size of the model.
+
+\paragraph{Why the gradient can explode.} The loss is propagated backwards through the
+whole session. The derivative of the loss at trial $T$ with respect to the state at
+trial $t$ contains the product of recurrent Jacobians
+\begin{equation}
+  \frac{\partial \vect{h}_T}{\partial \vect{h}_t}
+  \;=\; \prod_{\tau = t+1}^{T} \frac{\partial \vect{h}_\tau}{\partial \vect{h}_{\tau-1}},
+  \label{eq:jac}
+\end{equation}
+a product of up to 465 factors. If the recurrent weights $\vect{U}$ have a gain above
+one in some direction, that product grows exponentially with $T - t$. The gates of the
+GRU address mainly the opposite problem, the vanishing of that product; against
+explosion they help less. The $\tanh$ bounds the state, not the gradient. With $d = 1$
+or $2$ an explosion is less likely than in a large network, but one exploding batch is
+enough to corrupt Adam's running moments for many epochs afterwards.
+
+\paragraph{Why clipping and not truncation.} The classical alternative is truncated
+backpropagation, cutting the gradient at windows of, say, 50 trials. That would remove
+precisely the long-range dependence the model is meant to measure, the carry-over across
+block switches. Clipping, by contrast, changes neither the loss nor its optimum: it
+rescales the update only on the steps on which the global gradient norm exceeds the
+threshold, and is inert on every other step. Adam's per-parameter normalisation does not
+replace it, because that normalisation uses running averages which a single huge
+gradient biases.
+
+\paragraph{Diagnostic.} The global gradient norm is logged at every optimisation step.
+The fraction of steps on which it exceeded the threshold is reported with each fit
+(Table above). If that fraction is below 1\,\%, training is stable and clipping is only
+insurance. If it is higher, the learning rate is too high or the threshold too low, and
+the learning rate is lowered first; raising the threshold hides the problem. The teacher
+network used for distillation ($d = 16$) is the fit on which the diagnostic is most
+likely to fire.
 
 \subsection{Data split: nested cross-validation by session}
 \label{sec:split}
