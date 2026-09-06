@@ -19,9 +19,10 @@ running the task logic off the rig.
 
 The task writes trajectories, not derived kinematics: filtering, resampling
 and the velocity/acceleration measures all happen offline in the EDA
-notebook, which also fits the psychometric and chronometric functions. New
-sessions start with retries and requeue OFF, so each stimulus gets exactly
-one deliberate answer; both are console checkboxes for training sessions.
+notebooks (one for a single session, one across sessions), which also fit
+the psychometric and chronometric functions. New sessions start with retries
+and requeue OFF, so each stimulus gets exactly one deliberate answer; both
+are console checkboxes for training sessions.
 
 Conventions: files and classes in PascalCase, local functions in camelCase.
 Bar-length stimulus definitions are isolated in ConfigBarLengths.m so the
