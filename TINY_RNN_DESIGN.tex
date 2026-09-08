@@ -33,7 +33,7 @@
 \newcommand{\cue}{\mathrm{cue}}
 \newcommand{\NLL}{\mathrm{NLL}}
 
-\title{A trial-level recurrent neural network for CenterTask:\\
+\title{Recurrent neural networks for CenterTask:\\
        architecture and design decisions}
 \author{Paola Castillo}
 \date{September 2026}
@@ -42,115 +42,214 @@
 \maketitle
 
 \begin{abstract}
-This document specifies a small recurrent neural network (``tiny RNN'', in the sense of
-Ji-An et al.) that predicts, trial by trial, the category chosen by a rhesus monkey in a
-length-categorization task. The network receives the previous choice, the previous bar
-length, the previous outcome, the current bar length and the rule cue, keeps a hidden
-state of one to four variables, and reads the choice out through two decision criteria
-on the length axis. It is trained by maximum likelihood of the animal's choices and
+This document specifies the two recurrent neural networks used to model the
+behaviour of a rhesus monkey in a length-categorization task. Network 1 is a small
+trial-level network (``tiny RNN'', in the sense of Ji-An et al.) that predicts, trial by
+trial, the category chosen and its timing: it receives the previous choice, the previous
+bar length, the previous outcome, the current bar length and the rule cue, keeps a hidden
+state of one to four variables, and reads the choice out through two decision criteria on
+the length axis. It is trained by maximum likelihood of the animal's choices and
 compared, at matched number of state variables, with hand-written cognitive models
 (model-free reinforcement learning, model-based reinforcement learning, a Bayesian
-observer and a criterion-shift model). Every decision below is tied to what the task
-exports and to what the first thirteen sessions show. The within-trial networks (task
-network and motor network) are specified in a companion document
-(\texttt{RNN\_DESIGN.md}).
+observer and a criterion-shift model). Network 2 is a gated network, at a 10 ms step,
+that turns network 1's trial-level read-out into the cursor trajectory. Every decision
+below is tied to what the task exports and to what the first sessions show.
+Sections~\ref{sec:purpose}--\ref{sec:datareq} concern network 1; Section~\ref{sec:motor}
+specifies network 2; Section~\ref{sec:within} ties the two together.
 \end{abstract}
 
 \tableofcontents
 
 %======================================================================
-\section{Purpose}
+\section{Purpose and scope}
 \label{sec:purpose}
 %======================================================================
 
-One model is asked three questions.
+Four questions are asked of this design, and for each one the answer is a specific,
+pre-registered procedure, not an impression from looking at fitted curves. A fifth
+question, of the same shape, is stated separately in Section~\ref{sec:limits} because it
+cannot be answered by this design at all.
 
 \begin{enumerate}[leftmargin=*]
 \item \textbf{How much does the past weigh?} The categorization rule is fixed and the
       reward is a deterministic function of the stimulus, so no previous trial carries
       information about the correct answer to the current one. Any influence of the past
       is a bias. Does it exist, how large is it, and what shape does it have?
+
+      \emph{How this is resolved.} By a chain of nested comparisons in held-out
+      log-likelihood (Section~\ref{sec:models}): first M0 (no memory) against M1 (one
+      trial of linear history) — if M1 does not beat M0, the past does not weigh at all;
+      then M1 against the tiny RNN at $d = 1, 2, 3, 4$ — the smallest $d$ that matches or
+      beats M1 is the answer to ``how large'', measured in state variables rather than
+      trials. ``What shape'' is answered afterwards, by the diagnostics of
+      Section~\ref{sec:interp} (criterion trajectories, phase portrait, gate statistics),
+      never by the NLL comparison alone.
 \item \textbf{What is the form of the update rule?} Compared with a criterion model
-      written by hand, with the same number of state variables, does the network find a
-      dynamics the hand-written model cannot express?
+      written by hand (M2, Eq.~\eqref{eq:m2}), with the same number of state variables,
+      does the network find a dynamics the hand-written model cannot express?
+
+      \emph{How this is resolved.} M2 and the RNN are fitted on the same folds
+      (Section~\ref{sec:split}) with $d = 2$ for both, and compared by held-out NLL,
+      paired by session, with a bootstrap interval on the difference
+      (Section~\ref{sec:models}, ``Decision rule''). A tie means M2's formula is already
+      correct. A win for the RNN means the formula is wrong in a way that the closed-form
+      fit of Section~\ref{sec:interp}, item 6, is meant to name.
 \item \textbf{How does the 2- versus 3-category rule enter?} All at once, through the
       cue, or gradually, through feedback?
+
+      \emph{How this is resolved.} Two versions of the same network are fitted, one
+      with the cue as an input channel and one without it (Section~\ref{sec:rule}), and
+      their fitted criteria are compared trial by trial around every block switch in the
+      \texttt{alternate} sessions. A jump on the switch trial supports the cue-driven
+      version; a multi-trial drift supports the latent one; the two are not mutually
+      exclusive; the cue-driven version's own residual drift (if the cue-driven fit still
+      shows a slower-than-instant adjustment) is itself the answer to whether the animal
+      fully uses the cue.
+\item \textbf{Does the decision state explain the movement?} The choice and its timing
+      are one thing; the actual joystick trajectory that carries them out is another.
+      Does knowing $\vect{h}_t$ change the prediction of the trajectory, beyond knowing
+      only which target the animal walked to?
+
+      \emph{How this is resolved.} This is network 2's question (Section~\ref{sec:motor}),
+      with two nested controls (Section~\ref{sec:motor}, ``What is measured''): $\vect{b}$
+      versus nothing, and $\vect{b}$ versus the single scalar distance-to-criterion $D_t$
+      it is built to summarise. Section~\ref{sec:within} explains why the first control is
+      expected to matter \emph{even under weak trial-to-trial memory}, because most of
+      $\vect{b}$'s content is a same-trial, not a cross-trial, quantity.
 \end{enumerate}
 
-What the network does \emph{not} do: it does not model anything inside a trial (decision
-time, trajectory). That is the job of the task network and the motor network of the
-companion document.
+What network 1 does \emph{not} do on its own: it has no time resolution finer than a
+trial, so it cannot say \emph{when within the 1.5 s of a trial} the category is settled,
+only \emph{how long}, as a trial-level average (Section~\ref{sec:dt}). Modelling the
+continuous within-trial formation of the decision would need a third, separate network,
+at a 10 ms step; this design deliberately does not include one (Section~\ref{sec:two},
+last paragraph, states what is given up by that choice).
 
 %======================================================================
-\section{Why three networks, and what each one reads}
+\section{Why two networks, and what each one reads}
 \label{sec:three}
+\label{sec:two}
 %======================================================================
 
-The project has three recurrent networks because the behaviour has two time scales and,
-inside the trial, two functions. Across trials, the question is how the choice on one
-trial depends on the trials before it. Inside a trial, the question is first how the
-category is decided over the 1.5 s from bar onset to go, and then how that decision
-becomes a joystick movement. Each of the three has its own observable to explain: the
-choice, the choice together with its timing, and the cursor trajectory. Each therefore
-reads a different file and a different set of columns
-(Table~\ref{tab:three}; the same three are drawn unrolled in Figure~\ref{fig:unrolled}).
+The project has two recurrent networks because the behaviour has two time scales.
+Across trials, the question is how the choice on one trial depends on the trials before
+it, and how quickly and accurately it is carried out. Inside a trial, the question is how
+that decision becomes a joystick movement. Each of the two has its own observable to
+explain: the choice with its timing, and the cursor trajectory. Each therefore reads a
+different file and a different set of columns (Table~\ref{tab:three}; the same two are
+drawn unrolled in Figure~\ref{fig:unrolled}).
 
-\textbf{This document specifies network 1 only.} Networks 2 and 3 are specified in the
-companion document \texttt{RNN\_DESIGN.md}; they appear here only where they connect
-to network 1 (Sections~\ref{sec:dt} and \ref{sec:within}).
+Network 1 is specified in Sections~\ref{sec:formulation}--\ref{sec:datareq},
+network 2 in Section~\ref{sec:motor}, and the link between them in
+Section~\ref{sec:within}.
 
 \begin{table}[H]
   \centering\footnotesize
-  \caption{The three networks: what each one is for, what it reads, and what it predicts.
+  \caption{The two networks: what each one is for, what it reads, and what it predicts.
   Column names are those of the task's export files.}
   \label{tab:three}
-  \begin{tabular}{L{2.3cm}L{4.2cm}L{4.2cm}L{4.2cm}}
+  \begin{tabular}{L{2.6cm}L{6.3cm}L{6.3cm}}
     \toprule
-    & \textbf{1. Trial-level tiny RNN} & \textbf{2. Task network} & \textbf{3. Motor network} \\
+    & \textbf{1. Trial-level tiny RNN} & \textbf{2. Motor (joystick) network} \\
     \midrule
     Question &
-      How does the choice on trial $t$ depend on the trials before it, and on the rule cue? &
-      How is the category decided over the 1.5 s of a trial, and when? &
-      How does the decision state become a cursor trajectory? \\
+      How does the choice on trial $t$, and its timing, depend on the trials before it and on the rule cue? &
+      Does trial 1's decision state explain the cursor trajectory, beyond the chosen target and the go signal? \\
     \addlinespace
-    Specified in & this document & \texttt{RNN\_DESIGN.md}, Section 3 & \texttt{RNN\_DESIGN.md}, Section 4 \\
+    Specified in & Sections~\ref{sec:formulation}--\ref{sec:datareq} & Section~\ref{sec:motor} \\
     \addlinespace
-    One step is & one trial & 10 ms & 10 ms \\
-    One sequence is & one session (240--465 trials) & one trial ($\approx 335$ steps, bar onset $-300$ ms to go $+1500$ ms) & the same trial, aligned step by step with network 2 \\
+    One step is & one trial & 10 ms \\
+    One sequence is & one session (240--465 trials) & one trial ($\approx 335$ steps, bar onset $-300$ ms to go $+1500$ ms) \\
     \addlinespace
     File read &
-      \texttt{trial\_data\_<runTag>.csv} only (one row per trial) &
-      \texttt{trajectory\_<runTag>.csv} (one row per cursor sample, with \texttt{Time\_ms} and \texttt{Epoch}) joined to \texttt{trial\_data} on (\texttt{Block}, \texttt{TrialNumInBlock}, \texttt{Attempt}) &
-      the same join as network 2 \\
+      \texttt{trial\_data\_<runTag>.csv} (one row per trial), plus one derived column per trial (takeoff heading) that the dataset notebook adds from the trajectory &
+      \texttt{trajectory\_<runTag>.csv} (one row per cursor sample, with \texttt{Time\_ms} and \texttt{Epoch}) joined to \texttt{trial\_data} on (\texttt{Block}, \texttt{TrialNumInBlock}, \texttt{Attempt}) \\
     \addlinespace
     Input features &
-      \texttt{BarSizeVA\_deg} of rows $t$ and $t-1$; \texttt{ChosenTarget}, \texttt{IsCorrect} of row $t-1$; \texttt{NumCategories} of row $t$; optionally \texttt{DecisionTime\_s} of row $t-1$ &
-      \texttt{BarSizeVA\_deg} switched on during \texttt{Epoch} $=4$ (BAR); a rule channel from \texttt{NumCategories} switched on from \texttt{Epoch} $=5$ (CUE); a go channel from the onset of \texttt{Epoch} $=6$ &
-      the bottleneck $b(t)$ read from network 2's hidden state; \texttt{DirectionChosen} as a one-hot switched on at go; the go channel \\
+      \texttt{BarSizeVA\_deg} of rows $t$ and $t-1$; \texttt{ChosenTarget}, \texttt{IsCorrect} of row $t-1$; \texttt{NumCategories} of row $t$; optionally \texttt{DecisionTime\_s}, \texttt{ExecutionTime\_s} and the takeoff heading of row $t-1$ &
+      $\vect{b}$, a low-dimensional read-out of network 1's own $\vect{h}_t$ on \emph{this} trial, held constant across the trial's steps; \texttt{DirectionChosen} as a one-hot switched on at go; the go channel \\
     \addlinespace
     Target &
-      \texttt{ChosenTarget} of row $t$; optionally \texttt{DecisionTime\_s} of row $t$ &
-      \texttt{ChosenTarget} of the trial, repeated on every step after go (earlier steps masked); \texttt{DecisionTime\_s} as the check on the read-out crossing time &
-      \texttt{X\_px}, \texttt{Y\_px} at every step, centre-relative and divided by the 406 px centre-to-target distance \\
+      \texttt{ChosenTarget} of row $t$; optionally \texttt{DecisionTime\_s}, \texttt{ExecutionTime\_s} and the takeoff heading of row $t$ &
+      \texttt{X\_px}, \texttt{Y\_px} at every step, centre-relative and divided by the 406 px centre-to-target distance; takeoff time, takeoff heading and \texttt{ExecutionTime\_s} are read from the predicted trajectory as checks against network 1's timing heads \\
     \addlinespace
     Loss &
-      cross-entropy of the choice; optional Gaussian on $\log$ decision time &
-      cross-entropy on post-go steps &
+      cross-entropy of the choice; optional Gaussian terms on $\log$ decision time, $\log$ execution time and takeoff heading &
       squared error on position, valid steps only \\
     \addlinespace
     What is \emph{not} used &
-      any trajectory file; within-trial timing other than \texttt{DecisionTime\_s} &
-      the previous trials (unless network 1's state is passed as $h(0)$) &
-      the bar length directly (it arrives only through $b(t)$) \\
+      the trajectory samples themselves; the takeoff heading reaches it as one number per trial, precomputed by the dataset notebook &
+      the bar length directly (it arrives only through $\vect{b}$); the previous trials (a trial is a complete sequence on its own) \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-Two consequences of this split are worth stating once. First, network 1 never opens a
-trajectory file: everything it needs is in the trial table, one row per trial. Second,
-networks 2 and 3 never look across trials: a trial is a complete sequence for them, and
-the only way history reaches them is through the optional initial state supplied by
-network 1.
+Two consequences of this split are worth stating once. First, network 1 works on one
+row per trial: everything it needs is in the trial table, and the one quantity that
+comes from the trajectory (the takeoff heading) is reduced to a single number per trial
+before it reaches the network. Second, network 2 never looks across trials: a trial is a
+complete sequence for it, and the only way history reaches it is through $\vect{b}$,
+which is entirely determined by network 1's read-out on that one trial. Network 2 is not
+optional plumbing on top of network 1; $\vect{b}$ is the sole channel through which trial
+identity and decision state reach the movement, and Section~\ref{sec:within} returns to
+exactly what that channel carries and what it cannot.
+
+\paragraph{What a third network would have added, and why it is not here.} An earlier
+version of this design included a third, continuous-time network operating within the
+trial (10 ms step) whose job was to read the category out \emph{as it forms}, giving a
+mechanistic account of \emph{when} within the 1.5 s from bar to go the decision is
+settled, and admitting a biologically constrained excitatory/inhibitory variant
+comparable to extracellular recordings. Dropping it is a deliberate scope decision: those
+two questions (continuous within-trial dynamics, single-unit circuit mechanism) are set
+aside, and what survives of the timing question is answered at the trial level instead,
+as a single number per trial (decision time, Section~\ref{sec:dt}) rather than a
+continuous curve.
+
+%======================================================================
+\section{A question this design cannot resolve}
+\label{sec:limits}
+%======================================================================
+
+Whether the animal categorises by comparing the bar to a \emph{boundary} (the view built
+into every equation above) or by comparing it to a \emph{prototype} of each category and
+picking the most similar one is a real, classical question in categorization research,
+and this design cannot answer it from the data it uses. The reason is not a lack of
+data; it is an identifiability result.
+
+\paragraph{Why not.} On a single ordered continuum, a boundary rule and a
+prototype/similarity rule with equal-variance categories make \emph{identical}
+choice predictions: deciding by ``which side of $c_1$'' is mathematically the same
+computation as deciding by ``which of the two nearest category means is closer'', because
+the equidistant point between two equal-variance Gaussian prototypes \emph{is} the
+boundary. No amount of choice data, however much of it, can tell the two apart when this
+holds. The read-out of Section~\ref{sec:readout} is a boundary model \emph{by
+construction} — it has two criteria $c_1, c_2$ and nothing else — so even the flexible
+GRU behind it cannot discover a prototype-based strategy: the limitation is in the
+read-out's functional form, not in $d$ or in the amount of training data.
+
+\paragraph{What would make it resolvable, and why it is out of scope here.} A genuine
+test requires either (a) an alternative, similarity-based read-out
+($P(a_t = k) \propto \exp(-(\hat x_t - \mu_k)^2 / 2\sigma^2)$ for three learned prototypes
+$\mu_k$) fitted alongside the ordinal one and compared by held-out NLL — informative only
+if the two turn out \emph{not} to tie, which the equivalence result above says they will
+whenever the underlying category variances are equal — or (b) a categorical-perception
+discrimination sub-task (same/different judgements on pairs of bars, some crossing a
+category boundary, some not, matched in physical distance), which is the standard way
+the literature dissociates the two theories: a boundary account predicts sharpened
+discrimination exactly at the boundary; a prototype account does not. CenterTask has no
+such discrimination trial, so (b) is not answerable with the data this design uses, under
+any amount of modelling.
+
+\paragraph{What is partially informative, and already available.} The one asymmetry the
+existing data can speak to is at the edge of the Short category, which has no lower
+boundary (4.00 deg VA is the edge of the stimulus set, not a criterion). A boundary
+account predicts 4.00 is the easiest, fastest Short trial, since it is furthest from the
+only boundary that constrains Short. A prototype account does not have to predict this,
+since 4.00 could be an atypical member of Short if the category's prototype sits nearer
+its centre. Comparing decision time (Section~\ref{sec:dt}) across the four Short lengths
+— flat, or graded with distance to the category's own centre — is a cheap, already-planned
+analysis (it reuses the chronometric check of Section~\ref{sec:interp}, item 7) that
+bears on this question without resolving it outright.
 
 %======================================================================
 \section{The task and its outputs}
@@ -274,6 +373,52 @@ size as the three-category corpus already recorded (12 to 15 sessions, 50 to 70 
 switches; the budget is derived in Section~\ref{sec:type}). The three-category-only sessions of August and early September are
 kept as auxiliary training data (Section~\ref{sec:split}).
 
+\paragraph{Within-trial timing.} Network 2 (Section~\ref{sec:motor}) needs the
+durations of the epochs inside the trial, and network 1's timing heads
+(Section~\ref{sec:dt}) are checked against them. Table~\ref{tab:epochs} gives them for one full trajectory export; the
+schedule from bar onset to go is essentially fixed, so one input schedule serves every
+trial, although the export uses each trial's own onsets. The optional working-memory
+delays (\texttt{STIM\_DELAY}, \texttt{CUE\_DELAY}) are zero in every session recorded.
+
+\begin{table}[H]
+  \centering\small
+  \caption{Epoch durations inside the trial (session \texttt{31-Aug}, 323 trials), from
+  the \texttt{Epoch} column of the trajectory export.}
+  \label{tab:epochs}
+  \begin{tabular}{lrr}
+    \toprule
+    Epoch & Median & 5th--95th pct. \\
+    \midrule
+    HOLD (centre)                        & 992 ms   & 559--1\,426 \\
+    BAR                                  & 1\,026 ms & 1\,009--1\,026 \\
+    CUE                                  & 509 ms   & 509--526 \\
+    Bar onset $\to$ go (DECISION onset)  & 1\,550 ms & 1\,533--1\,568 \\
+    DECISION (go $\to$ leave centre)     & 359 ms   & 292--492 \\
+    MOVEMENT (leave $\to$ reach target)  & 176 ms   & 59--892 \\
+    ITI                                  & 2\,117 ms & 1\,567--4\,016 \\
+    Cursor sampling interval             & 9.05 ms  & 7.4--16.7 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\paragraph{Screen geometry.} Network 2 predicts position, so its units come from the
+rig (Table~\ref{tab:geometry}).
+
+\begin{table}[H]
+  \centering\small
+  \caption{Geometry, from \texttt{ConfigOrgParams.m} and \texttt{CenterOutTask.m}.}
+  \label{tab:geometry}
+  \begin{tabular}{ll}
+    \toprule
+    Hold window            & 200 px diameter \\
+    Targets                & 180 px diameter, at $320 \times 1.27 = 406$ px from the centre \\
+    Pixel pitch, viewing distance & 0.3108 mm/px, 400 mm \\
+    Target eccentricity    & 12.6 cm, about $17.5^\circ$ \\
+    Screen centre          & (960, 540) px; \texttt{X\_px}, \texttt{Y\_px} are absolute \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
 \paragraph{Filters.} Table~\ref{tab:filters} lists what is removed and why. After
 filtering there are about 3\,750 labelled trials in the 12 sessions recorded so far,
 190 of them in two-category blocks; the \texttt{alternate} corpus grows with every new
@@ -296,6 +441,7 @@ session.
 
 %======================================================================
 \section{Problem formulation}
+\label{sec:formulation}
 %======================================================================
 
 Each session is one sequence. At step $t$ the network receives $\vect{x}_t$, updates
@@ -319,13 +465,13 @@ the subject did, errors included.
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=0.8\textwidth]{panel_i.pdf}
-  \caption{The three networks of the project in the standard many-to-many layout,
+  \caption{The two networks of the project in the standard many-to-many layout,
   $T_x = T_y$. Green boxes are inputs $x^{\langle t\rangle}$, blue boxes the hidden
-  state $a^{\langle t\rangle}$ (our $\vect{h}_t$), red boxes the outputs
+  state $a^{\langle t\rangle}$ (our $\vect{h}_t$ or $g(t)$), red boxes the outputs
   $\hat y^{\langle t\rangle}$, and $a^{\langle 0\rangle}$ the learned initial state.
-  Top row: this document's network, one step per trial. Middle and bottom rows: the
-  within-trial task and motor networks of the companion document, one step per 10 ms;
-  grey outputs exist but are masked out of the loss until the go signal.}
+  Top row: network 1, one step per trial, every step labelled. Bottom row: the motor
+  network (Section~\ref{sec:motor}), one step per 10 ms; none of its outputs are
+  masked, since a cursor position is measured at every step.}
   \label{fig:m2m}
 \end{figure}
 
@@ -504,7 +650,7 @@ The input vector has $k = 9$ channels (Table~\ref{tab:inputs}).
     \midrule
     total $k$    & 9 & \\
     \midrule
-    $\log \mathrm{DT}_{t-1}$ (optional) & 1 & previous decision time, standardised; Section~\ref{sec:dt} \\
+    $\log \mathrm{DT}_{t-1}$, $\log \mathrm{ET}_{t-1}$, $|\vartheta_{t-1}|$ (optional) & 3 & previous decision time, execution time and takeoff heading, standardised; Section~\ref{sec:dt} \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -517,7 +663,7 @@ represent only what changes from trial to trial.
 
 \paragraph{What is left out.} \texttt{PrevTrialDirection} is logged but not used: without
 an export of the target layout it cannot be related to the chosen category. It becomes
-usable once the layout is exported (Section~\ref{sec:data-req}).
+usable once the layout is exported (Section~\ref{sec:datareq}).
 
 \subsection{State: a gated recurrent unit}
 \label{sec:gru}
@@ -627,6 +773,78 @@ Ji-An et al.\ use.
 The final equation is the same in both notations up to the order of the terms:
 $c^{\langle t\rangle} = \Gamma_u \odot \tilde{c}^{\langle t\rangle} + (1 - \Gamma_u) \odot c^{\langle t-1\rangle}$
 is Eq.~\eqref{eq:gru-h} with $\Gamma_u = \vect{z}_t$.
+
+\paragraph{A worked numerical trace, $d = 1$.} To make the four equations concrete,
+here is one hypothetical trial run through them by hand, with plausible trained
+parameter values plugged in directly at the level of gate \emph{outputs} (the numbers a
+trained $\sigma$ or $\tanh$ would return), so no weight matrices need to be guessed.
+Trial $t-1$ was a Short response to a 5.00 bar, and it was wrong (5.00 is Mid); the
+criterion was sitting at $h_{t-1} = -0.10$.
+
+\begin{table}[H]
+  \centering\small
+  \caption{One hidden-unit update, traced step by step. ``Value'' is what the equation
+  returns on this trial; ``Reading'' is what that number means for this task.}
+  \begin{tabular}{p{2.6cm}p{1.6cm}p{9.3cm}}
+    \toprule
+    Quantity & Value & Reading \\
+    \midrule
+    $h_{t-1}$ & $-0.10$ & the criterion's displacement entering the trial \\
+    $r_t$ (Eq.~\ref{eq:gru-r}) & $0.85$ & high: the candidate is allowed to read almost all of $h_{t-1}$ \\
+    $r_t \odot h_{t-1}$ & $-0.085$ & the fraction of the old state the candidate actually sees \\
+    $\tilde h_t$ (Eq.~\ref{eq:gru-c}) & $-0.65$ & the proposal: given the input alone (plus that fraction of the past), the unit would become fairly negative — consistent with `push the criterion down, an error just happened at 5.00' \\
+    $z_t$ (Eq.~\ref{eq:gru-z}) & $0.30$ & moderate: only three tenths of the proposal is accepted this trial \\
+    $h_t$ (Eq.~\ref{eq:gru-h}) & $-0.265$ & the new state: $(1{-}0.30)(-0.10) + 0.30(-0.65) = -0.265$, a small step from $-0.10$ towards $-0.65$, not a jump to it \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Two things to notice. First, $r_t$ and $z_t$ did different jobs: $r_t$ controlled what the
+\emph{proposal} was allowed to see, $z_t$ controlled how much of that proposal was
+\emph{kept}. Second, the actual update ($-0.10 \to -0.265$) is far smaller than the
+candidate ($-0.65$) because $z_t$ was moderate; a network that instead learned $z_t
+\approx 0.9$ on this kind of trial would produce an update close to a full reset, and a
+network with $z_t \approx 0.05$ would barely move at all. Which of these the trained
+network actually does is an empirical question, read off exactly this way from real
+trials in Section~\ref{sec:interp}.
+
+\paragraph{What is fixed by the definition of a GRU, and what is a design choice here.}
+These are two different lists, and confusing them is the usual source of ``I don't see
+what I could still change''. Table~\ref{tab:gru-fixed} keeps them apart.
+
+\begin{table}[H]
+  \centering\small
+  \caption{What cannot be changed without ceasing to be a GRU, versus what this project
+  chose and could have chosen otherwise.}
+  \label{tab:gru-fixed}
+  \begin{tabular}{p{6.3cm}p{8.5cm}}
+    \toprule
+    \textbf{Fixed by the GRU definition} & \\
+    \midrule
+    Exactly two gates, $\vect{r}_t$ and $\vect{z}_t$, each a function of $\vect{x}_t$ and $\vect{h}_{t-1}$ &
+      This is what makes it a GRU rather than a plain RNN (no gates) or an LSTM (a separate cell state and a third, output, gate) \\
+    Logistic $\sigma$ in both gates &
+      A gate is a per-unit proportion; it must live in $(0,1)$, and $\sigma$ is the standard map onto that interval \\
+    $\tanh$ in the candidate $\tilde{\vect{h}}_t$ &
+      The state must stay bounded over a 465-step session and be symmetric so a criterion can move either way; $\tanh$ gives both, a ReLU would give neither \\
+    The reset gate multiplies $\vect{h}_{t-1}$ specifically \emph{inside} the candidate's pre-activation (Eq.~\ref{eq:gru-c}), nowhere else &
+      This is the one place ``the past'' can be hidden from the proposal; it is not a free placement choice \\
+    The mixing equation $\vect{h}_t = (1-\vect{z}_t)\odot\vect{h}_{t-1} + \vect{z}_t\odot\tilde{\vect{h}}_t$ &
+      This exact convex combination, with $\vect{z}_t$ playing both roles (weight on the new value, one minus the weight on the old one), is the GRU's signature; an LSTM uses two independent gates here instead of one \\
+    \midrule
+    \textbf{A design choice for this project} & \\
+    \midrule
+    $d$, the number of units & Section~\ref{sec:type}; the main axis that is swept \\
+    What feeds $\vect{x}_t$ (the specific input channels, Table~\ref{tab:inputs}) &
+      Has nothing to do with the cell being a GRU; any recurrent cell could take these same inputs \\
+    $\vect{h}_0$ (learned, shared) & Could instead be fixed at zero, or fitted per session \\
+    The read-out sitting on top of $\vect{h}_t$ (Section~\ref{sec:readout}) &
+      Not part of the GRU at all. This is the single biggest lever for changing what the model \emph{can} express without touching the recurrent cell — it is also exactly what makes Section~\ref{sec:limits}'s question unresolvable here: the read-out, not the cell, is what forces a boundary account \\
+    Regularisation (L2/L1 on the weights) & An external addition; the bare GRU has none \\
+    The plain-RNN comparison (Table below) & An ablation of the gating mechanism, not a modification of it \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
 \begin{table}[H]
   \centering\small
@@ -781,80 +999,127 @@ not fully use the cue.
 \end{figure}
 
 %======================================================================
-\section{Decision time as a second observable}
+\section{Timing observables: decision time, execution time and movement takeoff}
 \label{sec:dt}
 %======================================================================
 
-The trial table logs, for every trial with a response, the time from target onset to
-leaving the centre (\texttt{DecisionTime\_s}, median 351 ms, 5th--95th percentile
-292--492 ms) and the time from leaving the centre to reaching the target
-(\texttt{ExecutionTime\_s}, median 183 ms). The first is the time of the decision; the
-second is motor and is left to the motor network of the companion document. The decision
-time can enter the model in two ways, which answer different questions.
+Every trial with a response yields, besides the category chosen, three measurements of
+\emph{how} the response was produced (Table~\ref{tab:timing}). The model uses all three,
+as inputs from the previous trial and as outputs on the current one.
 
-\subsection{The previous decision time as an input}
+\begin{table}[H]
+  \centering\small
+  \caption{The three timing observables. The takeoff is the same event that ends the
+  decision time (the transition from \texttt{Epoch} 6 to 7); what the trajectory adds is
+  its direction.}
+  \label{tab:timing}
+  \begin{tabular}{L{2.3cm}L{5.0cm}L{3.4cm}L{2.9cm}}
+    \toprule
+    Observable & Definition & Source & Typical value \\
+    \midrule
+    Decision time $\mathrm{DT}_t$ & from target onset (go) to the cursor leaving the 200 px hold window & \texttt{DecisionTime\_s} & 351 ms (292--492) \\
+    Execution time $\mathrm{ET}_t$ & from leaving the hold window to entering the 180 px target & \texttt{ExecutionTime\_s} & 183 ms (59--892) \\
+    Movement takeoff & the moment the cursor leaves the hold window (its time is go $+\,\mathrm{DT}_t$) and its \textbf{heading} $\vartheta_t$: the direction of the cursor over the first 50 ms after leaving, measured as the signed angle to the chosen target's direction & derived by the dataset notebook from \texttt{X\_px}, \texttt{Y\_px} around the onset of \texttt{Epoch} 7; written to the per-trial table as \texttt{TakeoffHeading\_deg} & $0^\circ$ on a straight reach; large on a change of mind \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
-$\mathrm{DT}_{t-1}$ is observed before trial $t$, so it can be an input channel without
-any leakage. It carries something $a_{t-1}$ and $r_{t-1}$ do not: how sure the subject
-was. A slow correct choice and a fast correct choice are different histories, and the
-criterion shift may depend on that. The channel is $\log \mathrm{DT}_{t-1}$,
-standardised within the training set, set to zero on trials without a response; the
-input dimension becomes $k = 10$. It is tested with the same ablation as the other
-channels.
+The three measure different things. The decision time is when the animal commits. The
+execution time is the vigour of the movement once committed. The takeoff heading is
+how committed the animal was at the moment of leaving: a reach that starts towards one
+target and bends towards another is a change of mind, and it shows as a heading error
+at takeoff before it shows in the endpoint. The takeoff heading is computed once by the
+dataset notebook and stored as a column of the per-trial table, so network 1 still reads
+one table with one row per trial.
 
-What cannot be done is to use $\mathrm{DT}_t$, the current trial's time, as an input for
-predicting $a_t$: it is part of the same response that is being predicted.
+\subsection{The previous trial's timing as inputs}
 
-\subsection{The current decision time as a second output}
+$\mathrm{DT}_{t-1}$, $\mathrm{ET}_{t-1}$ and $\vartheta_{t-1}$ are observed before trial
+$t$, so they can be input channels without any leakage. They carry something $a_{t-1}$
+and $r_{t-1}$ do not: how sure and how vigorous the subject was. A slow correct choice
+and a fast correct choice are different histories, and the criterion shift may depend on
+that. The channels are $\log \mathrm{DT}_{t-1}$, $\log \mathrm{ET}_{t-1}$ and
+$|\vartheta_{t-1}|$, each standardised within the training set and set to zero on
+trials without a response; the input dimension becomes $k = 12$. Each is tested with the
+same ablation as the other channels.
 
-The more informative use is to predict choice and decision time jointly from the same
-state. The decision time is modelled as log-normal with a mean that depends on the
-distance from the perceived length to the nearest criterion:
+What cannot be done is to use $\mathrm{DT}_t$, $\mathrm{ET}_t$ or $\vartheta_t$, the
+current trial's values, as inputs for predicting $a_t$: they are part of the same
+response that is being predicted.
+
+\subsection{The current trial's timing as outputs}
+
+The more informative use is to predict the choice and the three timing observables
+jointly from the same state. Each gets a read-out from $\vect{h}_t$ and from the
+proximity of the perceived length to the nearest criterion:
 \begin{align}
   D_t &= -\min_{k \in \{1,2\}} \left|\, \hat{x}_t - c_k(\vect{h}_t) \,\right|
     && \text{proximity to the nearest criterion} \label{eq:dt-D}\\
-  \mu_t &= \mu_0 + \kappa\, D_t + \vect{w}_{\mathrm{DT}}\T \vect{h}_t
-    && \text{predicted log decision time} \label{eq:dt-mu}\\
-  \log \mathrm{DT}_t &\sim \mathcal{N}\!\left(\mu_t, \sigma_{\mathrm{DT}}^2\right)
-    && \label{eq:dt-lik}
+  \mu^{\mathrm{DT}}_t &= \mu^{\mathrm{DT}}_0 + \kappa_{\mathrm{DT}}\, D_t + \vect{w}_{\mathrm{DT}}\T \vect{h}_t,
+    \qquad \log \mathrm{DT}_t \sim \mathcal{N}\!\left(\mu^{\mathrm{DT}}_t, \sigma_{\mathrm{DT}}^2\right)
+    && \text{decision time} \label{eq:dt-mu}\\
+  \mu^{\mathrm{ET}}_t &= \mu^{\mathrm{ET}}_0 + \kappa_{\mathrm{ET}}\, D_t + \vect{w}_{\mathrm{ET}}\T \vect{h}_t,
+    \qquad \log \mathrm{ET}_t \sim \mathcal{N}\!\left(\mu^{\mathrm{ET}}_t, \sigma_{\mathrm{ET}}^2\right)
+    && \text{execution time} \label{eq:et-mu}\\
+  \log \sigma^{\vartheta}_t &= \nu_0 + \kappa_{\vartheta}\, D_t + \vect{w}_{\vartheta}\T \vect{h}_t,
+    \qquad \vartheta_t \sim \mathcal{N}\!\left(0, (\sigma^{\vartheta}_t)^2\right)
+    && \text{takeoff heading} \label{eq:th-sig}
 \end{align}
-with learned $\mu_0$, $\kappa$, $\vect{w}_{\mathrm{DT}}$ and $\sigma_{\mathrm{DT}}$.
-The loss of Eq.~\eqref{eq:loss} gains a second term,
+with all $\mu_0$, $\nu_0$, $\kappa$, $\vect{w}$ and $\sigma$ learned. The decision time
+and the execution time are log-normal with a mean that moves with the state. The takeoff
+heading is zero-mean by construction (a straight reach) and what the state predicts is
+its \emph{spread}: near a criterion, or after an error, the animal is expected to leave
+the centre less accurately.
+
+The loss of Eq.~\eqref{eq:loss} gains one term per observable,
 \begin{equation}
-  \mathcal{L}(\theta) \;=\; \mathcal{L}_{\mathrm{choice}}(\theta)
-  \;+\; \lambda_{\mathrm{RT}}\, \mathcal{L}_{\mathrm{DT}}(\theta), \qquad
+  \mathcal{L}(\theta) \;=\; \mathcal{L}_{\mathrm{choice}}
+  \;+\; \lambda_{\mathrm{DT}}\, \mathcal{L}_{\mathrm{DT}}
+  \;+\; \lambda_{\mathrm{ET}}\, \mathcal{L}_{\mathrm{ET}}
+  \;+\; \lambda_{\vartheta}\, \mathcal{L}_{\vartheta},
+  \qquad
   \mathcal{L}_{\mathrm{DT}} = \frac{1}{N_{\mathrm{lab}}} \sum m_t
-  \left[ \frac{(\log \mathrm{DT}_t - \mu_t)^2}{2\sigma_{\mathrm{DT}}^2}
+  \left[ \frac{(\log \mathrm{DT}_t - \mu^{\mathrm{DT}}_t)^2}{2\sigma_{\mathrm{DT}}^2}
          + \log \sigma_{\mathrm{DT}} \right],
   \label{eq:loss-joint}
 \end{equation}
-with $\lambda_{\mathrm{RT}}$ chosen on the validation session so that neither term
-dominates (start at $\lambda_{\mathrm{RT}} = 1$ with both terms in nats per trial). The
-same mask $m_t$ applies: trials without a response have no decision time.
+with $\mathcal{L}_{\mathrm{ET}}$ of the same form and
+$\mathcal{L}_{\vartheta} = \frac{1}{N_{\mathrm{lab}}}\sum m_t
+[\vartheta_t^2 / 2(\sigma^{\vartheta}_t)^2 + \log \sigma^{\vartheta}_t]$. The weights
+$\lambda$ are chosen on the validation session so that no term dominates (start at 1
+with every term in nats per trial). The same mask $m_t$ applies: trials without a
+response have no timing.
 
 Three reasons to do this.
 
 \begin{enumerate}[leftmargin=*]
-\item \textbf{A second observation per trial.} With one categorical label per trial,
-      the choice constrains the hidden state weakly. The decision time is continuous and
-      constrains it far more. The joint fit is expected to identify $d$ and the
-      criterion dynamics with less data.
+\item \textbf{Four observations per trial instead of one.} With one categorical label
+      per trial, the choice constrains the hidden state weakly. The three timing
+      observables are continuous and constrain it far more. The joint fit is expected
+      to identify $d$ and the criterion dynamics with fewer sessions.
 \item \textbf{A direct test of the criterion interpretation.} If $c_1$ and $c_2$ are
-      the subject's boundaries, decision times must peak where $\hat{x}_t$ falls near
-      them. That is the chronometric function of the notebook (Section 1.6), computed
-      with the model's boundaries instead of the nominal ones. A model that predicts
-      the choice well and the time badly has criteria that are not the subject's.
-      Equation~\eqref{eq:dt-D} makes the test explicit: $\kappa$ should be positive.
-\item \textbf{A link to the task network.} The within-trial task network produces a
-      decision time as the moment its read-out crosses a threshold. The trial-level
-      $\mu_t$ and the within-trial crossing time must agree trial by trial; if they do
-      not, one of the two networks carries a bias the other does not.
+      the subject's boundaries, decision times must peak and takeoff headings must
+      scatter where $\hat{x}_t$ falls near them. That is the chronometric function of
+      the notebook (Section 1.6), computed with the model's boundaries instead of the
+      nominal ones. Equations~\eqref{eq:dt-mu} and \eqref{eq:th-sig} make the test
+      explicit: $\kappa_{\mathrm{DT}}$ and $\kappa_{\vartheta}$ should be positive. The
+      execution time separates decision from vigour: if $\kappa_{\mathrm{ET}}$ is near
+      zero while $\kappa_{\mathrm{DT}}$ is not, difficulty slows the decision and not the
+      movement, which is the expected pattern.
+\item \textbf{A link to network 2.} Network 2 (Section~\ref{sec:motor}) produces a
+      takeoff and an arrival as crossings of the hold radius and of the target when its
+      predicted trajectory is simulated forward from $\vect{b}$ on a given trial; its
+      simulated takeoff time, takeoff heading and execution time must agree with
+      $\exp(\mu^{\mathrm{DT}}_t)$, $\vartheta_t$ and $\exp(\mu^{\mathrm{ET}}_t)$
+      respectively. This is the only place the two networks are cross-checked against
+      each other, since network 2 has no internal read-out of the category itself.
 \end{enumerate}
 
 To keep the comparison with the cognitive models fair, $\mathcal{L}_{\mathrm{choice}}$
-is always reported on its own, and the criterion model M2 receives the same decision-time
-read-out, Eqs.~\eqref{eq:dt-D}--\eqref{eq:dt-lik}, which it can because it also has
-criteria. Models without criteria (M3) get $\mu_t = \mu_0 + \vect{w}\T \vect{Q}_t(s_t,\cdot)$.
+is always reported on its own, and the criterion model M2 receives the same three
+timing read-outs, Eqs.~\eqref{eq:dt-D}--\eqref{eq:th-sig}, which it can because it also
+has criteria. Models without criteria (M3) get the same read-outs with $D_t$ replaced by
+the margin between the two largest $Q_t(s_t, \cdot)$.
 
 \subsection{Elapsed time as an input}
 
@@ -865,9 +1130,10 @@ time-dependent forgetting. The value comes from \texttt{Time\_ms} in the traject
 export, not from the trial table. It is added last, and only if the ablation of
 $r_{t-1}$ suggests decay.
 
-\paragraph{Order of adoption.} First $\mathrm{DT}_{t-1}$ as an input, because it is one
-more ablation and nothing else changes. Then the joint choice--time model, because that
-is where the scientific gain is. Then $\Delta t$, if needed.
+\paragraph{Order of adoption.} First the three previous-trial channels as inputs,
+because they are three more ablations and nothing else changes. Then the joint model
+with the three timing outputs, because that is where the scientific gain is. Then
+$\Delta t$, if needed.
 
 %======================================================================
 \section{Training}
@@ -1119,13 +1385,16 @@ Once trained, the network is read on the stimulus axis, not on the state axis.
 \item \textbf{Closed form.} If $d = 1$, fit a simple expression (piecewise linear or a
       low-order polynomial) to the learned update curve. If it differs from
       Eq.~\eqref{eq:m2}, it is a new cognitive rule.
-\item \textbf{Chronometric check.} In the joint model, observed decision time against
-      $|\hat{x}_t - c_k(\vect{h}_t)|$ for the nearest criterion, binned. The curve must
-      fall with distance; its slope is $\kappa$ in Eq.~\eqref{eq:dt-mu}.
+\item \textbf{Chronometric check.} In the joint model, observed decision time,
+      execution time and absolute takeoff heading against $|\hat{x}_t - c_k(\vect{h}_t)|$
+      for the nearest criterion, binned. Decision time and heading spread must fall with
+      distance (slopes $\kappa_{\mathrm{DT}}$, $\kappa_{\vartheta}$); execution time
+      should not (Eqs.~\eqref{eq:dt-mu}--\eqref{eq:th-sig}).
 \end{enumerate}
 
 %======================================================================
 \section{Predictions}
+\label{sec:predictions}
 %======================================================================
 
 \begin{table}[H]
@@ -1143,7 +1412,8 @@ Once trained, the network is read on the stimulus axis, not on the state axis.
     On the five trials after each block switch the cue-driven version beats the latent one; the latent version closes the gap within about ten trials & the cue is visible; the split moves a boundary by 0.8 deg VA, which errors reveal quickly \\
     The between-session NLL exceeds the within-session NLL by less than the gap between M0 and the best RNN & accuracy stable at 0.73--0.81 across days \\
     Ablating $s_{t-1}$ costs more NLL than ablating $a_{t-1}$ & perceptual serial dependence is the typical history effect in categorization \\
-    In the joint model $\kappa > 0$: decision times peak near the fitted criteria & chronometric effect, notebook Section 1.6 \\
+    In the joint model $\kappa_{\mathrm{DT}} > 0$ and $\kappa_{\vartheta} > 0$: decision times peak and takeoff headings scatter near the fitted criteria & chronometric effect, notebook Section 1.6 \\
+    $\kappa_{\mathrm{ET}} \approx 0$: difficulty slows the decision, not the movement & execution time is motor; median 183 ms with a wide right tail unrelated to length \\
     The joint model reaches the same choice NLL as the choice-only model with fewer sessions & the decision time is a continuous second observation per trial \\
     \bottomrule
   \end{tabular}
@@ -1151,7 +1421,7 @@ Once trained, the network is read on the stimulus axis, not on the state axis.
 
 %======================================================================
 \section{Data requirements and changes to the task}
-\label{sec:data-req}
+\label{sec:datareq}
 %======================================================================
 
 The design assumes that \texttt{alternate} is the base session mode from now on.
@@ -1177,37 +1447,324 @@ Section~\ref{sec:split} to work, and what has to change in the task code.
 \end{table}
 
 %======================================================================
-\section{Relation to the within-trial networks}
+\section{Network 2: the motor (joystick) network}
+\label{sec:motor}
+%======================================================================
+
+\subsection{Question and data}
+
+Network 2 asks how network 1's decision state becomes a cursor trajectory, and whether
+that state explains the trial-to-trial variability of the movement (Section~\ref{sec:purpose}, question 4). One step is
+10 ms; one sequence is one trial, from 300 ms before bar onset to 1\,500 ms after go,
+about 335 steps (Table~\ref{tab:epochs}). Its data come from the full trajectory export
+(\texttt{trajectory\_<runTag>.csv}, one row per cursor sample with \texttt{Time\_ms} and
+\texttt{Epoch}) joined to the trial table on (\texttt{Block}, \texttt{TrialNumInBlock},
+\texttt{Attempt}); the target is the measured cursor position, \texttt{X\_px},
+\texttt{Y\_px}.
+
+\subsection{Model}
+
+\begin{align}
+  \vect{b} &= \vect{W}_b\, \big[\vect{h}_t;\; s_t\big]
+     && \text{trial-level read-out, $k$ dimensions, one value per trial} \label{eq:mot-b}\\
+  \vect{g}(t) &= \mathrm{GRU}\!\left(\left[\vect{b},\ \mathrm{dir}_{\mathrm{onehot}},\ \mathrm{go}(t)\right],\ \vect{g}(t - \Delta t)\right)
+     && \text{Eqs.~\eqref{eq:gru-r}--\eqref{eq:gru-h}} \label{eq:mot-g}\\
+  \vect{p}(t) &= \vect{W}_p\, \vect{g}(t) = (x, y)(t)
+     && \text{cursor position, centre-relative} \label{eq:mot-p}
+\end{align}
+$\vect{h}_t$ is network 1's state \emph{after} it has processed trial $t$ (so it already
+depends on $s_t$ through network 1's own forward pass); $\vect{b}$ therefore carries the
+stimulus into the movement pathway only through the decision state, plus $s_t$ itself,
+never through a separate direct sensory channel. Unlike a within-trial decision signal,
+$\vect{b}$ does not vary with $t$ inside the trial: it is computed once, from network 1,
+and broadcast as a constant input to every step of network 2's sequence
+(Figure~\ref{fig:unrolled}).
+
+\begin{table}[H]
+  \centering\small
+  \caption{Decisions about the motor network.}
+  \begin{tabular}{lp{5cm}p{7.5cm}}
+    \toprule
+    Element & Decision & Justification \\
+    \midrule
+    Source of $\vect{b}$ & network 1's $\vect{h}_t$ (plus $s_t$), never a continuous within-trial signal & There is no within-trial decision network in this design (Section~\ref{sec:two}); $\vect{b}$ is the only channel by which trial identity reaches the movement \\
+    Bottleneck $k$ & the number of components for 90\,\% of the variance in the functional PCA of the movement curves, in the target frame; typically 3--5 & It is the actual dimensionality of the movement shape, and the number to compare with the neural population later \\
+    GRU $M$ & 32 (sweep 16--64) & Two output dimensions, 3\,800 trials \\
+    $\mathrm{dir}_{\mathrm{onehot}}$ & \texttt{DirectionChosen}, not \texttt{DirectionCorrect}, on from go & It is where the animal went, also on error trials. The layout is random and independent of the stimulus, so the direction carries no information about the category, and it is logged on every trial with a response \\
+    Output & \textbf{position}, not velocity & Position is what is measured, every 9 ms. Velocity is derived and amplifies joystick noise \\
+    Units & pixels relative to the centre, divided by the 406 px centre-to-target distance & The target sits at radius 1 and the hold window edge at 0.25, the same scale throughout the trial \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\paragraph{Why position and not velocity.} Four reasons, stated once.
+\begin{itemize}[leftmargin=*]
+\item The velocity in the export is obtained by differentiating the resampled position,
+      and it needs a causal Butterworth filter at 10 Hz to be usable. That filter puts
+      lag and design choices into the training target.
+\item The sampling interval jitters (median 9 ms, 95th percentile 16.7 ms); a finite
+      difference with an irregular step is noisier still. Position does not suffer this.
+\item Movement onset and endpoint are defined in position by the task itself (leaving
+      the 200 px hold window, entering the 180 px target), so the metrics are read
+      directly from $\vect{p}(t)$ and coincide with \texttt{DecisionTime\_s} and
+      \texttt{ExecutionTime\_s}.
+\item Predicting velocity and integrating it accumulates drift: every step can look
+      right and the endpoint be wrong.
+\end{itemize}
+
+\subsection{Loss}
+
+Squared error on $\vect{p}(t)$ over valid steps, with three terms.
+\begin{equation}
+  \mathcal{L}_{\mathrm{motor}} = \frac{1}{N_v}\sum_{t\ \mathrm{valid}}
+  \left\| \vect{p}(t) - \vect{p}^{\mathrm{obs}}(t) \right\|^2
+  \;+\; \gamma \sum_{t} \left\| \vect{p}(t) - \vect{p}(t - \Delta t) \right\|^2 .
+  \label{eq:mot-loss}
+\end{equation}
+\begin{itemize}[leftmargin=*]
+\item \textbf{Before go} the target is the trial's actual hold position, not an exact
+      zero: the cursor moves inside the 200 px window. The floor is the RMS of the
+      position during HOLD, in pixels; a pre-go error below that RMS squared means
+      nothing.
+\item \textbf{After go}, ordinary squared error up to the arrival at the target.
+\item \textbf{Smoothness}, the second term with a small $\gamma$, so that the network
+      does not produce jumps. This recovers the one thing that a velocity target gave
+      for free.
+\end{itemize}
+Curriculum: first the mean trajectories per length $\times$ direction, then single
+trials. The first step fixes the shape; the second asks whether trial-to-trial
+variability is explained from $\vect{b}$. Velocity, peak speed and curvature are
+computed afterwards, from the predicted and the observed trajectory with the same filter,
+and only as evaluation metrics.
+
+\subsection{Two training regimes}
+
+\begin{table}[H]
+  \centering\small
+  \begin{tabular}{lp{5.5cm}p{6.5cm}}
+    \toprule
+    Regime & What is done & Purpose \\
+    \midrule
+    Two-stage (first) & train network 1; freeze it; compute $\vect{b}$ from its frozen $\vect{h}_t$ on every trial; train $\vect{W}_b$ and the GRU on top & Interpretability: $\vect{b}$ is a read-out of a decision state fixed beforehand, not one that adapts to make the movement easier to fit \\
+    Joint & $\mathcal{L} = \mathcal{L}_{\mathrm{choice}} + \lambda\,\mathcal{L}_{\mathrm{motor}}$, gradients into both networks & Does the motor fit improve if network 1's representation is allowed to accommodate the movement? \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{What is measured}
+
+\begin{enumerate}[leftmargin=*]
+\item $R^2$ of position per step and per trial; endpoint error in pixels; takeoff-time
+      error, with the takeoff defined as the first crossing of the hold radius, as in the
+      task (so it is compared with \texttt{DecisionTime\_s}); execution-time error, with
+      arrival defined as entering the target (compared with \texttt{ExecutionTime\_s});
+      takeoff-heading error over the first 50 ms after the crossing; and, derived from
+      the trajectory, peak-speed and curvature error.
+\item Against the linear decoder of the notebook at the same horizon: the GRU has to
+      win, or the recurrence contributes nothing.
+\item \textbf{Two nested controls}, both against the full model with $\vect{b}$:
+      (i) the same GRU with direction and go only, no $\vect{b}$ at all — if this alone
+      costs accuracy, \emph{some} decision-related signal reaches the movement, which
+      Section~\ref{sec:within} argues is likely even with weak trial-to-trial memory;
+      (ii) the same GRU with $\vect{b}$ replaced by the single scalar $D_t$
+      (Eq.~\eqref{eq:dt-D}, already computed by network 1) instead of the full learned
+      $k$-dimensional $\vect{b}$ — if (ii) matches the full model, $\vect{b}$ is not
+      earning its keep beyond the obvious perceptual-distance signal; if the full
+      $\vect{b}$ still wins, it carries something $D_t$ alone does not (plausibly the
+      rule identity, or a genuine cross-trial bias). Together, (i) and (ii) are the
+      direct answer to question 4 of Section~\ref{sec:purpose}.
+\item Error trials (\texttt{ErrorType} $= 2$): is the trajectory towards the wrong
+      target predicted from $\vect{b}$ before movement onset? This links to the
+      changes-of-mind analysis of the notebook.
+\end{enumerate}
+
+%======================================================================
+\section{Coupling: how the two networks fit together}
 \label{sec:within}
 %======================================================================
 
-The companion document specifies two networks that operate inside the trial at a
-10 ms step: a continuous-time rate network that reads the category out over the trial,
-and a GRU that produces the cursor trajectory (Figure~\ref{fig:unrolled}). Three links
-tie them to the network specified here.
+Figure~\ref{fig:coupling} draws the coupling mechanism directly: network 1's read-out
+on trial $t$, reduced to a small vector, becomes a constant input to every one of
+network 2's $\approx 335$ within-trial steps, and network 2's simulated trajectory is
+checked back against network 1's timing predictions. Figure~\ref{fig:unrolled} draws the
+same two networks in the generic many-to-many layout used throughout this document. With
+only two networks, the link between them is a single, mandatory channel rather than a
+set of optional cross-checks, and the rest of this section states precisely what that
+channel carries, why, and what follows for how $\vect{h}_t$ itself should be read.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{panel_j.pdf}
+  \caption{The coupling pipeline. Network 1 processes trial $t$ and produces $h_t$;
+  $\vect{b}$ is computed once from $h_t$ and $s_t$ (Eq.~\eqref{eq:mot-b}) and broadcast,
+  unchanged, to every step of network 2's within-trial loop for that same trial. Network
+  2's simulated trajectory, run forward from $\vect{b}$, is then checked back against
+  network 1's timing predictions (dashed): this is a post-hoc consistency check, not a
+  path gradients flow through in the two-stage training regime.}
+  \label{fig:coupling}
+\end{figure}
+
+\subsection{Order and the channel}
 
 \begin{itemize}[leftmargin=*]
-\item The curve $s_t \mapsto P(a_t)$ of this network, evaluated at a typical
-      $\vect{h}_t$, must agree with the asymptotic output $z(T)$ of the task network.
-      If they disagree, one of the two is absorbing something that is not its own.
-\item The state $\vect{h}_t$ can serve as the initial condition of the task network on
-      trial $t$, giving it history context it need not learn. This is optional and is
-      evaluated as an ablation.
-\item This network is fitted first. It is the cheapest, it fixes the minimal $d$ of
-      history, and it says whether there is a history the other networks must respect.
+\item \textbf{Order.} Network 1 is fitted first, on its own, using only
+      \texttt{trial\_data}. It is the cheapest, it fixes the minimal $d$ of history, and
+      it settles questions 1--3 of Section~\ref{sec:purpose} before network 2 is touched.
+      Network 2 is fitted second, in the two-stage regime and then jointly
+      (Section~\ref{sec:motor}).
+\item \textbf{The channel: $\vect{b}$.} Network 1's read-out $\vect{h}_t$ on trial $t$,
+      linearly reduced to $k$ dimensions together with $s_t$, is the \emph{only} way
+      trial identity and decision state reach network 2 (Eq.~\eqref{eq:mot-b}). There is
+      no separate route by which the stimulus, the history, or the rule can influence the
+      predicted trajectory. This makes the nested controls of Section~\ref{sec:motor}
+      (network 2 with $\vect{b}$ removed, or with $\vect{b}$ replaced by $D_t$ alone) a
+      clean test: whatever they cost is exactly what $\vect{b}$ was carrying, and the
+      next subsection works out what that is likely to be.
+\item \textbf{Consistency of the timing.} Network 1 predicts a decision time, an
+      execution time and a takeoff-heading spread as trial-level statistics
+      (Section~\ref{sec:dt}). Network 2, run forward with $\vect{b}$ from that same
+      trial, produces a full simulated trajectory, from which the same three quantities
+      can be measured directly (takeoff and arrival as crossings of the hold radius and
+      the target). The two must agree, trial by trial; a systematic gap says one of the
+      two networks carries a bias the other does not.
+\item \textbf{What this design gives up.} Because $\vect{b}$ is constant across a
+      trial's 335 steps, network 2 has no way to represent \emph{when within the trial}
+      the decision was reached beyond what $\vect{b}$ already summarises; it can only
+      act on a decision already made. A continuous within-trial account of decision
+      formation is not available in this design (Section~\ref{sec:two}).
+\end{itemize}
+
+\subsection{What can network 1's hidden state plausibly detect, given weak sequential effects?}
+\label{sec:hidden-content}
+
+Section~\ref{sec:three}'s ``What the data show'' pools sequential effects that are
+small: accuracy 0.788 after a correct trial versus 0.692 after an error, and
+repeat-category probability within a few points of chance. It is tempting to conclude
+that $\vect{h}_t$ therefore has little to do, and that the whole coupling built around it
+is coupling to noise. That conclusion moves too fast, for a reason built into
+$\vect{x}_t$ itself: \textbf{$\vect{h}_t$ is not only a memory of the past. It is
+computed \emph{using} $s_t$, the current trial's own stimulus} (Table~\ref{tab:inputs}),
+so it is shaped by something with no cross-trial component at all before any question
+of memory arises.
+
+Three different things can live inside a low-$d$ $\vect{h}_t$, at three different
+timescales, and weak single-trial serial effects rule out at most one of them
+(Table~\ref{tab:hidden-content}).
+
+\begin{table}[H]
+  \centering\small
+  \caption{Three candidate contents of $\vect{h}_t$, and how the design already tells
+  them apart.}
+  \label{tab:hidden-content}
+  \begin{tabular}{L{3.6cm}L{2.6cm}L{8.4cm}}
+    \toprule
+    Candidate content & Timescale & How it is told apart \\
+    \midrule
+    Same-trial decision state: how far $s_t$ sits from the current criteria,
+    $D_t$ (Eq.~\eqref{eq:dt-D}), i.e.\ how easy or hard \emph{this} trial's
+    categorisation is &
+    zero trials (within trial $t$) &
+    Present even if $z_t \approx 1$ always (no real memory): $\vect{h}_t$ still differs
+    trial to trial simply because $s_t$ does. Not weakened at all by weak sequential
+    effects \\
+    Rule / block identity: which of the 2-/3-category regimes is active &
+    tens to $\sim$150 trials (a block) &
+    A much \emph{longer}-range dependency than single-trial serial effects, and not
+    bounded by them; isolated by the cue-driven-versus-latent comparison
+    (Section~\ref{sec:rule}) and by ablating $\cue_t$ (Section~\ref{sec:interp}, item 4) \\
+    Genuine single-trial memory: a criterion shift that outlives one trial and decays
+    (M2, Eq.~\eqref{eq:m2}) &
+    one to a few trials &
+    This is the one component the weak sequential effects (0.788 vs.\ 0.692) directly
+    bound to be small; it is what survives \emph{after} removing the first two rows
+    above, tested by comparing the tiny RNN against M1 and M2 at matched $d$
+    (Section~\ref{sec:models}) \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\paragraph{Reading the diagnostics of Section~\ref{sec:interp} correctly.} Three
+outcomes are all consistent with weak single-trial sequential effects, and they are not
+the same finding.
+\begin{enumerate}[leftmargin=*]
+\item If $d = 1$ or $2$ does not beat M0 at all (Section~\ref{sec:models}'s decision
+      rule), $\vect{h}_t$ has collapsed onto a redundant, same-trial function of $s_t$
+      and $\cue_t$: the gates will show $z_t$ near 1 essentially unconditionally (nothing
+      is ever protected across trials), and the network is, in effect, the psychometric
+      function with extra steps. This is itself a reportable finding, already listed in
+      Section~\ref{sec:predictions}.
+\item If $d$ beats M0 but the gain tracks rule identity as a near step function between
+      blocks, rather than evolving smoothly trial to trial within a fixed rule, the unit
+      has learned \emph{which rule is active}, not a decaying memory of individual
+      trials. The phase-portrait tool of Section~\ref{sec:interp}, item 2, is the wrong
+      lens for this regime (it assumes single-trial dynamics); the criterion-trajectory
+      plot of item 1, viewed across a block switch, is the right one.
+\item Only a gain that survives \emph{after} ablating $\cue_t$ and that varies at the
+      single-trial resolution \emph{within} a fixed-rule stretch is genuine short-memory
+      dynamics, interpretable with the phase portrait and compared against M2 as
+      originally intended.
+\end{enumerate}
+Conflating these three is the main risk in over-interpreting a small $d$: a unit that
+is really tracking ``which rule'' or ``how hard is this stimulus'' can look, at a glance,
+like it is tracking ``what happened last trial'', and only the ablations and the
+block-aware plots above tell them apart.
+
+\subsection{Consequence: what this predicts for network 2}
+
+If the same-trial row of Table~\ref{tab:hidden-content} dominates, as the weak
+sequential effects suggest it should, then $\vect{b}$'s value to network 2 is expected
+to come mainly from \emph{within-trial decision difficulty} ($D_t$, how close $s_t$ sits
+to a criterion) rather than from cross-trial memory. This is not a weakness of the
+design; it is a well-grounded, independently motivated hypothesis in its own right: harder
+perceptual decisions are known to produce slower, more curved, more hesitant reaches
+(a documented effect of decision difficulty and confidence on reach kinematics), and that
+effect requires no trial-to-trial memory at all, only a within-trial representation of
+how ambiguous the current stimulus was. Two consequences follow directly.
+
+\begin{itemize}[leftmargin=*]
+\item The first nested control of Section~\ref{sec:motor} ($\vect{b}$ versus nothing) is
+      \emph{not} expected to come back null merely because sequential effects are weak.
+      $D_t$ is available every trial regardless of memory, and if the motor network uses
+      it at all, that control will show an effect.
+\item The second nested control ($\vect{b}$ versus the raw scalar $D_t$) is the one that
+      actually tests for a contribution from the other two rows of
+      Table~\ref{tab:hidden-content} (rule identity, single-trial history) beyond plain
+      perceptual difficulty. Given how weak the sequential effects are, this second
+      control is predicted to show little or no further gain in three-category-only
+      sessions, and a larger one in \texttt{alternate} sessions right after a block
+      switch, where rule identity is briefly the dominant thing $\vect{h}_t$ carries.
 \end{itemize}
 
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=\textwidth]{panel_g.pdf}
-  \caption{The three networks unrolled in time, with what $x_t$ and $y_t$ are in each.
-  Row 1 is this document's network (one step per trial, every step labelled). Rows 2 and
-  3 are the within-trial task and motor networks (one step per 10 ms); the task network's
-  outputs before the go signal are masked, which is where many-to-many looks like
-  many-to-one, and the motor network has a measured position at every step. Right: the
-  two topologies contrasted.}
+  \caption{The two networks unrolled in time, with what $x_t$ and $y_t$ are in each.
+  Row 1 is network 1 (one step per trial, every step labelled). Row 2 is the motor
+  (joystick) network (one step per 10 ms); it has a measured position at every step, so
+  none of its outputs are masked, unlike row 1's optional timing heads. Right: the two
+  topologies contrasted.}
   \label{fig:unrolled}
 \end{figure}
+
+\subsection{Changes to the export and to the task code}
+
+\begin{table}[H]
+  \centering\small
+  \caption{What network 2 needs from the RNN-dataset notebook and from the task.}
+  \begin{tabular}{p{4cm}p{11cm}}
+    \toprule
+    Where & Change \\
+    \midrule
+    Dataset notebook, labels & add the chosen category (\texttt{ChosenTarget} $- 1$, $-1$ if no response), the number of categories per trial, and the takeoff heading in degrees (signed angle between the cursor direction over the first 50 ms after leaving the hold window and the chosen target's direction) — these feed network 1 \\
+    Dataset notebook, $\vect{b}$ construction & run the trained (frozen) network 1 forward over every session; save $\vect{h}_t$ per trial; build $\vect{b}$ from it and $s_t$ per Eq.~\eqref{eq:mot-b}; store as a $(B, k)$ tensor, one row per trial, to be broadcast across that trial's steps at training time \\
+    Dataset notebook, motor input & \texttt{DirectionChosen} as a one-hot tensor $(B, T, 4)$, on from go; a go indicator $(B, T)$ \\
+    Dataset notebook, motor target & use the exported position divided by 406 px as the target; keep velocity as a diagnostic only; add the hold RMS in pixels to the metadata \\
+    Dataset notebook, filters & \texttt{Attempt} $= 1$; old-schema sessions get three categories \\
+    Dataset notebook, split & by session, as in Section~\ref{sec:split}, replacing the single chronological test session \\
+    \texttt{CenterOutTask.m} & export the category at each of the four positions (\texttt{CatAtRight}, \texttt{CatAtUp}, \texttt{CatAtLeft}, \texttt{CatAtDown}; 0 = no target), which is already in memory in \texttt{layoutForTrial}. This is not consumed by either network as specified, but is a prerequisite for any future extension that has network 1 pick a direction from the colours instead of taking \texttt{DirectionChosen} as a given \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
 \clearpage
 %======================================================================
@@ -1215,10 +1772,10 @@ tie them to the network specified here.
 \section{Model skeleton in PyTorch}
 %======================================================================
 
-The choice loss is \texttt{-(mask * log probs[a\_obs]).sum() / mask.sum()}; the
-decision-time loss is the Gaussian negative log-likelihood of \texttt{log\_dt} given
-\texttt{mu} and \texttt{log\_sd.exp()}, with the same mask, weighted by
-$\lambda_{\mathrm{RT}}$. For the feedback-inferred version the two $\cue_t$ channels of
+The choice loss is \texttt{-(mask * log probs[a\_obs]).sum() / mask.sum()}; the three
+timing losses are Gaussian negative log-likelihoods of \texttt{log\_dt}, \texttt{log\_et}
+and \texttt{heading} given the returned means and spreads, with the same mask, weighted
+by $\lambda_{\mathrm{DT}}$, $\lambda_{\mathrm{ET}}$ and $\lambda_{\vartheta}$. For the feedback-inferred version the two $\cue_t$ channels of
 \texttt{x} are set to zero; for the choice-only model the second output is ignored.
 
 \begin{lstlisting}
@@ -1234,10 +1791,10 @@ class TinyRNN(nn.Module):
         self.log_beta  = nn.Parameter(torch.zeros(1))
         self.lapse_raw = nn.Parameter(torch.tensor(-3.0))
         self.link = link
-        # decision-time head (Sec. Decision time): mu = mu0 + kappa * D + w_dt.h
-        self.w_dt   = nn.Linear(d, 1)
-        self.kappa  = nn.Parameter(torch.zeros(1))
-        self.log_sd = nn.Parameter(torch.zeros(1))
+        # timing heads (Sec. Timing observables): each is bias + kappa * D + w.h
+        self.w_dt, self.w_et, self.w_th = nn.Linear(d, 1), nn.Linear(d, 1), nn.Linear(d, 1)
+        self.kappa = nn.Parameter(torch.zeros(3))          # DT, ET, heading spread
+        self.log_sd = nn.Parameter(torch.zeros(2))         # sigma_DT, sigma_ET
 
     def cdf(self, u):
         if self.link == "logistic":
@@ -1247,7 +1804,7 @@ class TinyRNN(nn.Module):
     def forward(self, x, s):                  # x: (T, B, k), s: (T, B)
         T, B, _ = x.shape
         h = self.h0.expand(B, -1)
-        out, mu = [], []
+        out, mu_dt, mu_et, log_sd_th = [], [], [], []
         for t in range(T):
             h = self.cell(x[t], h)
             xhat = s[t] + self.w_g(h).squeeze(-1)
@@ -1261,8 +1818,49 @@ class TinyRNN(nn.Module):
             probs = torch.stack([1 - p1, p1 - p2, p2], dim=-1).clamp_min(1e-6)
             out.append(probs)
             D = -torch.minimum((xhat - c1).abs(), (xhat - c2).abs())   # Eq. (dt-D)
-            mu.append(self.w_dt(h).squeeze(-1) + self.kappa * D)
-        return torch.stack(out), torch.stack(mu)   # (T, B, 3), (T, B)
+            mu_dt.append(self.w_dt(h).squeeze(-1) + self.kappa[0] * D)    # log DT mean
+            mu_et.append(self.w_et(h).squeeze(-1) + self.kappa[1] * D)    # log ET mean
+            log_sd_th.append(self.w_th(h).squeeze(-1) + self.kappa[2] * D) # log heading sd
+        return torch.stack(out), torch.stack(mu_dt), torch.stack(mu_et), torch.stack(log_sd_th)
+\end{lstlisting}
+
+\subsection*{Motor network: building $\vect{b}$ from the frozen network 1}
+
+This is the two-stage regime (Section~\ref{sec:motor}): \texttt{TinyRNN} is trained and
+frozen first; \texttt{trial\_b} below is run once per session to produce one
+$\vect{b}$ vector per trial, which \texttt{MotorNet} then takes as a \emph{constant}
+input, broadcast across every 10 ms step of that trial.
+
+\begin{lstlisting}
+@torch.no_grad()
+def trial_b(tiny_rnn, x, s, W_b):
+    # x, s: one session, shapes (T, 1, k) and (T, 1). Returns b: (T, k_bottleneck).
+    T = x.shape[0]
+    h = tiny_rnn.h0.expand(1, -1)
+    hs = []
+    for t in range(T):
+        h = tiny_rnn.cell(x[t], h)
+        hs.append(h.squeeze(0))
+    h_seq = torch.stack(hs)                       # (T, d)
+    return W_b(torch.cat([h_seq, s], dim=-1))      # (T, k_bottleneck), Eq. (mot-b)
+
+
+class MotorNet(nn.Module):
+    def __init__(self, k_bottleneck=4, M=32):
+        super().__init__()
+        self.cell = nn.GRUCell(k_bottleneck + 4 + 1, M)   # b, dir one-hot, go
+        self.g0   = nn.Parameter(torch.zeros(M))
+        self.w_p  = nn.Linear(M, 2)                       # (x, y), Eq. (mot-p)
+
+    def forward(self, b, dir_onehot, go):    # b: (k,) constant this trial; dir/go: (T, .)
+        T = go.shape[0]
+        g = self.g0.unsqueeze(0)
+        pos = []
+        for t in range(T):
+            x_t = torch.cat([b.unsqueeze(0), dir_onehot[t:t+1], go[t:t+1, None]], dim=-1)
+            g = self.cell(x_t, g)
+            pos.append(self.w_p(g).squeeze(0))
+        return torch.stack(pos)                  # (T, 2)
 \end{lstlisting}
 
 \end{document}

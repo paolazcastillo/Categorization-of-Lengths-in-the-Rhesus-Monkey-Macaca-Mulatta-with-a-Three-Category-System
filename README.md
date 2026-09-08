@@ -31,4 +31,11 @@ physical bar sizes can be changed in one place.
 
 The RZ2 analog joystick link that spans both machines (setup, what to watch
 during a session, known open items, and the debugging chronology behind the
-current constants) is documented in centerTask_v8.20/RZ2_JOYSTICK.md.
+current constants) is documented in centerTask_v8.24/RZ2_JOYSTICK.md.
+
+v8.24: trial_data_*.csv gains four trailing columns, CatAtRight, CatAtUp,
+CatAtLeft and CatAtDown -- the category (1 Short, 2 Mid, 3 Long) of the target
+drawn at each cardinal position on that attempt, 0 where none was drawn. This
+exports the per-trial target layout, so a direction bias can be separated from
+a category bias offline and PrevTrialDirection becomes interpretable. Earlier
+columns keep their positions; files from v8.23 and before simply lack the four.
