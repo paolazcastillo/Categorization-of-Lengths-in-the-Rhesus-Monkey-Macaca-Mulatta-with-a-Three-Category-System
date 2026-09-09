@@ -39,3 +39,11 @@ drawn at each cardinal position on that attempt, 0 where none was drawn. This
 exports the per-trial target layout, so a direction bias can be separated from
 a category bias offline and PrevTrialDirection becomes interpretable. Earlier
 columns keep their positions; files from v8.23 and before simply lack the four.
+
+v8.24 also restores sessionMode 'alternate' segments of configurable length
+(orgParams.alternateBlocks2cat/3cat, the console's "Alternate: blocks/segment"
+fields). The v8.23 refactor removed the two defaults and the engine logic while
+the console kept reading them, so CenterConsole failed to construct with
+"Reference to non-existent field 'alternateBlocks2cat'" and the window came up
+half-built. With 1/1 (the default) the schedule is the strict one-block
+alternation v8.23 hardcoded.
