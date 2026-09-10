@@ -45,19 +45,6 @@ function CenterOutTask(orgParams)
 %        nothing about whether the subject read the colour rule -- it is a
 %        motor/patience failure on a trial the subject had already got right.
 %
-%   TARGET LAYOUT (CatAtRight/CatAtUp/CatAtLeft/CatAtDown, trial_data_*.csv,
-%   added in v8.24). The category (1=Short, 2=Mid, 3=Long) of the target drawn
-%   at each of the four cardinal positions on THIS attempt, 0 where no target
-%   was drawn. Together with DirectionChosen this is the full response
-%   alternative set of the trial, which is what lets a motor (direction) bias
-%   be separated from a decision (category) bias offline: without it,
-%   PrevTrialDirection cannot be related to the chosen category because the
-%   layout is reshuffled every trial (DrawTrialLayout.m). Written from
-%   trialDirs/trialColorRows, which a correction retry reshuffles in place,
-%   so the four columns always describe the layout that was actually on
-%   screen for that row. Appended after SessionMode so every earlier
-%   column keeps its position.
-%
 %   INPUT  orgParams : struct of GUI handles and run parameters (from
 %          CenterConsole.m's runTask, or built by hand by a
 %          caller like OffrigPlay.m).
@@ -723,13 +710,10 @@ fid_log = fopen(trialLogFile, 'w');
 % down); the two only differ for a trial that needed a retry, and only
 % this per-attempt CSV (not the printed console report) records both side
 % by side, so a retry's actual vs. planned position is fully auditable here.
-% CatAtRight..CatAtDown (v8.24) = category drawn at each cardinal position
-% this attempt, 0 = no target there; see the TARGET LAYOUT note in the file
-% header. Trailing columns, so readers indexing by position are unaffected.
 fprintf(fid_log, ['Date,Block,TrialNumInBlock,StimulusGroup,BarSizeVA_deg,DecisionTime_s,' ...
                 'ExecutionTime_s,TotalTime_s,IsCorrect,ErrorType,DirectionChosen,DirectionCorrect,' ...
                 'PlannedDirection,ChosenTarget,PrevTrialCorrect,PrevTrialDirection,Attempt,' ...
-                'NumCategories,SessionMode,CatAtRight,CatAtUp,CatAtLeft,CatAtDown\n']);
+                'NumCategories,SessionMode\n']);
 fclose(fid_log);
 fprintf('Trial log file created:      %s\n', trialLogFile);
 
@@ -760,16 +744,12 @@ nFoilPending   = 0;   % rows in foilEventBuf waiting to be written this trial
 % --- Session mode: how many categories per trial -------------------------
 % '3cat'        : every trial is Short/Mid/Long (3 targets)        [default]
 % '2cat'        : every trial is Short/Long (2 targets)
-% 'alternate'   : alternate 2-cat and 3-cat in runs of FULL blockSize-trial
-%                 blocks (blockLenCats below is pinned to blockSize itself --
-%                 48 for full12, 12 for prototypes3 -- so a block finishes at
-%                 one category count before the next one can switch). How
-%                 many consecutive blocks of each: alternateBlocks2cat blocks
-%                 of 2-cat, then alternateBlocks3cat blocks of 3-cat, then
-%                 back to 2-cat, repeating for the rest of the session. Both
-%                 default to 1 (the original strict one-block-at-a-time
-%                 alternation); set from the console's "Blocks per segment"
-%                 fields, or orgParams.alternateBlocks2cat/3cat directly.
+% 'alternate'   : alternate 2-cat and 3-cat one FULL blockSize-trial block at
+%                 a time (block 1 = all 2-cat, block 2 = all 3-cat, block 3 =
+%                 all 2-cat, ...); blockLenCats below
+%                 is pinned to blockSize itself (48 for full12, 12 for
+%                 prototypes3), so a block finishes at one category count
+%                 before the next block switches to the other.
 %                 (named 'alternate', not 'blocks', so it doesn't collide with
 %                 the stopMode='blocks' 48-trial quota unit above)
 % 'interleaved' : 2-cat or 3-cat chosen at random each trial
@@ -817,21 +797,6 @@ blockLenCats = blockSize;   % one full block (see blockSize above) per category-
 % minPerLength) needs no session-mode exclusion; every length in the
 % active stimulus set is shown regardless of mode, only their category
 % grouping differs.
-
-% 'alternate' only: how many consecutive FULL blocks of 2-cat run before
-% switching to 3-cat, and how many of 3-cat before switching back, with
-% the pattern then repeating for the rest of the session (e.g. 10 and 10
-% runs 10 blocks of 2-cat, then 10 blocks of 3-cat, then 10 more of
-% 2-cat, ...). Default 1 each reproduces the original fixed
-% one-block-at-a-time alternation. Set from the console's "Blocks per
-% segment" fields next to Session mode; see ConfigOrgParams.m. Ignored by
-% every other sessionMode. (Present in v8.22, dropped by the v8.23 refactor
-% while the console kept its fields; restored in v8.24.)
-alternateBlocks2cat = OrgGet(orgParams, 'alternateBlocks2cat', 1);
-alternateBlocks3cat = OrgGet(orgParams, 'alternateBlocks3cat', 1);
-alternateSegLen2  = blockLenCats * alternateBlocks2cat;
-alternateSegLen3  = blockLenCats * alternateBlocks3cat;
-alternateCycleLen = alternateSegLen2 + alternateSegLen3;
 
 % lengthCat2 (length -> bucket for the 2-category task) is resolved with the
 % stimulus set and the bar subset up in the SETUP section, alongside
@@ -901,7 +866,7 @@ for t = 1:seqSize
     else
         switch sessionMode
             case '2cat',        nc = 2;
-            case 'alternate',   nc = 2 + double(mod(t - 1, alternateCycleLen) >= alternateSegLen2);
+            case 'alternate',   nc = 2 + mod(floor((t - 1) / blockLenCats), 2);
             case 'interleaved', nc = 2 + double(rand < 0.5);
             otherwise,          nc = 3;          % '3cat'
         end
@@ -1567,12 +1532,30 @@ while exitFlag == 0
             trajBuf(end + max(trajChunk, nRz2), 9) = 0;   % grow in one chunk
         end
         if isempty(rz2Batch)
-            % No new UDP sample arrived this frame (rare, only if the
-            % relay briefly stalls); log the cached last-known position
-            % ReadCursorPosition just returned so trajN still advances
-            % exactly once, same as every other input source.
+            % No new UDP sample arrived this frame; log the cached
+            % last-known position ReadCursorPosition just returned so trajN
+            % still advances exactly once, same as every other input source.
+            %
+            % Stamped with the CAPTURE clock, not the wall clock (2026-09-10).
+            % This row used to carry sampleTime (GetSecs) between rows that
+            % carry capture times, which put two clocks in one column and
+            % made this row's trigTime jump ahead of the stream by the
+            % link's latency on every empty frame -- the last remaining
+            % source of backward steps in the export (1047 of 1054 on
+            % 09-Sep) and a blind spot for the skew guard, which read zero
+            % on exactly the frames where nothing had arrived. "Now" in
+            % capture time when nothing new has arrived is the time of the
+            % newest sample we HAVE: the previous row's. Same position,
+            % same time, RZ2Idx = NaN so the row is identifiable as cached.
+            % Before the first sample of the session there is no capture
+            % clock yet, so the wall clock stands in.
             trajN = trajN + 1;
-            trajBuf(trajN, :) = [total_trials, (sampleTime - sessionT0) * 1000, x, y, nextEpoch.Value, trajBlockNum, trajTrialNumInBlock, stimAttempt, NaN];
+            if trajN > 1 && ~isnan(trajBuf(trajN - 1, 2))
+                cachedTimeMs = trajBuf(trajN - 1, 2);
+            else
+                cachedTimeMs = (sampleTime - sessionT0) * 1000;
+            end
+            trajBuf(trajN, :) = [total_trials, cachedTimeMs, x, y, nextEpoch.Value, trajBlockNum, trajTrialNumInBlock, stimAttempt, NaN];
         else
             for bi = 1:size(rz2Batch, 1)
                 trajN = trajN + 1;
@@ -1597,6 +1580,22 @@ while exitFlag == 0
         trajBuf(trajN, :) = [total_trials, (sampleTime - sessionT0) * 1000, x, y, nextEpoch.Value, trajBlockNum, trajTrialNumInBlock, stimAttempt, NaN];
     end
 
+    % ONE CLOCK PER COMPARISON (2026-09-10). Every window the state machine
+    % anchors on a cursor event (t.centerHold, t.leaveCenter, t.reachTarget,
+    % t.holdStart) is now tested against trigTime, not this_time. Those
+    % markers are CAPTURE times; this_time is the wall clock; the two differ
+    % by the link's transport latency, and testing one against the other
+    % shortened every such window by exactly that latency -- 3 s on 03-Sep,
+    % 72 ms on 09-Sep, whatever it is today. With both sides in capture
+    % time the latency cancels and a 2.5 s window is 2.5 s. The decision
+    % window is anchored on the stimulus flip (wall clock) and tested
+    % against trigTime too: that is the true reaction time up to the link's
+    % constant floor latency, instead of reaction time plus the queue. The
+    % honest side effect: if the stream stalls, trigTime does not advance,
+    % so a hold takes exactly the stall longer to confirm. Without samples
+    % there is nothing to confirm it with. On mouse/joystick input trigTime
+    % equals this_time and nothing changes.
+    %
     % trigRowIdx/trigTime: the trajectory row (and its timestamp) for the
     % cursor sample the state machine below actually acts on. inCenterCircle
     % and inTarget are both computed from THIS sample's x/y, so every epoch
@@ -1799,7 +1798,7 @@ while exitFlag == 0
 
         case EP.HOLD
             centerHoldColor = green_c;
-            if this_time > t.centerHold + holdTime && inCenterCircle
+            if trigTime > t.centerHold + holdTime && inCenterCircle
                 lenIdx = trialBarIndices(trial_sequence_index);   % length (1-12)
                 grp    = trialCatIndices(trial_sequence_index);   % category (1-3)
                 currentBarWidth   = allBarSizes(lenIdx);          % width from length
@@ -1817,7 +1816,7 @@ while exitFlag == 0
                 BarOn = 1;
                 t.barOnset = GetSecs();
                 nextEpoch = EP.BAR;
-            elseif this_time < t.centerHold + holdTime && ~inCenterCircle
+            elseif trigTime < t.centerHold + holdTime && ~inCenterCircle
                 [nextEpoch, t, error_type] = earlyExit(EP, t, trigTime);
             end
 
@@ -1886,7 +1885,7 @@ while exitFlag == 0
                 t.targetOnset    = trigTime;
                 awaitTargetOnset = 0;
             end
-            if this_time <= t.targetOnset + maxDecisionTime
+            if trigTime <= t.targetOnset + maxDecisionTime
                 if ~inCenterCircle && ~t.leaveCenter
                     % trigTime, not GetSecs(): the exit was detected from
                     % THIS frame's sample, which was read before the render
@@ -1911,7 +1910,7 @@ while exitFlag == 0
 
         case EP.MOVEMENT
             % Ventana de movimiento vigente en ESTE frame.
-            withinWindow = this_time <= t.leaveCenter + maxExecutionTime;
+            withinWindow = trigTime <= t.leaveCenter + maxExecutionTime;
 
             % --- Diagnostico: entrada a un foil por FLANCO (no por frame) ---
             % Solo cuenta; no cambia el estado ni penaliza. En modo indulgente
@@ -1944,7 +1943,7 @@ while exitFlag == 0
                 foilEventBuf(nFoilPending, :) = [trajBlockNum, trajTrialNumInBlock, stimAttempt, ...
                     current_trial_color, trialColorRows(trial_sequence_index, foilK), ...
                     current_trial_direction, trialDirs(trial_sequence_index, foilK), ...
-                    trialBarIndices(trial_sequence_index), this_time - t.targetOnset];
+                    trialBarIndices(trial_sequence_index), trigTime - t.targetOnset];
             end
             wasInFoil = inFoilNow;
 
@@ -2067,7 +2066,7 @@ while exitFlag == 0
                     else
                         error_type = 1;   % early exit (sin flash)
                     end
-                elseif this_time > t.reachTarget + minTarHoldTime
+                elseif trigTime > t.reachTarget + minTarHoldTime
                     t.reward = GetSecs();
                     reward = rewTime;
                     nextEpoch = EP.REWARD;
@@ -2076,9 +2075,9 @@ while exitFlag == 0
                 rewarded = false;
                 if inTarget(correctTarget)
                     if ~t.holdStart
-                        t.holdStart = this_time;   % ancla al (re)ingreso al target
+                        t.holdStart = trigTime;   % ancla al (re)ingreso al target, en reloj de captura
                     end
-                    if this_time >= t.holdStart + minTarHoldTime
+                    if trigTime >= t.holdStart + minTarHoldTime
                         t.reward = GetSecs();
                         reward = rewTime;
                         nextEpoch = EP.REWARD;
@@ -2087,7 +2086,7 @@ while exitFlag == 0
                 else
                     t.holdStart = 0;   % salir reinicia el conteo (sin abortar)
                 end
-                if ~rewarded && this_time > t.leaveCenter + maxExecutionTime
+                if ~rewarded && trigTime > t.leaveCenter + maxExecutionTime
                     chosen_target_color = 0;
                     chosen_target_direction = 0;
                     nextEpoch = EP.ERROR_FB;  error_type = 1;
@@ -2408,27 +2407,12 @@ while exitFlag == 0
                 % use DIFFERENT length->category splits (lengthCat2 vs
                 % lengthCategory), so without these two columns a pooled
                 % analysis cannot tell which regime produced a given row.
-                %
-                % CatAtRight..CatAtDown: the category drawn at each of the
-                % four cardinal positions on THIS attempt (0 = no target
-                % there). Read from trialDirs/trialColorRows for the first
-                % blkNc slots, which is exactly what placeTargets drew: a
-                % correction retry overwrites those rows in place at trial
-                % start, so this is the layout actually shown, not the
-                % originally scheduled one. Direction index 1..4 =
-                % Right/Up/Left/Down, matching directionNames_log.
-                catAtDir = zeros(1, 4);
-                for slotK = 1:blkNc
-                    catAtDir(trialDirs(trial_sequence_index, slotK)) = ...
-                        trialColorRows(trial_sequence_index, slotK);
-                end
                 fid_log = fopen(trialLogFile, 'a');
-                fprintf(fid_log, '%s,%d,%d,%s,%.2f,%.4f,%.4f,%.4f,%d,%d,%s,%s,%s,%d,%d,%s,%d,%d,%s,%d,%d,%d,%d\n', ...
+                fprintf(fid_log, '%s,%d,%d,%s,%.2f,%.4f,%.4f,%.4f,%d,%d,%s,%s,%s,%d,%d,%s,%d,%d,%s\n', ...
                     sessionDate, blockNum, trialNumInBlock, colorNames_log{current_trial_color}, ...
                     barVA_log, decisionTime, executionTime, totalTime, good_trial, error_type, ...
                     dirChosenStr, directionNames_log{current_trial_direction}, plannedDirForLog, chosen_target_color, ...
-                    prevTrialCorrect, prevTrialDirection, stimAttempt, blkNc, sessionMode, ...
-                    catAtDir(1), catAtDir(2), catAtDir(3), catAtDir(4));
+                    prevTrialCorrect, prevTrialDirection, stimAttempt, blkNc, sessionMode);
                 fclose(fid_log);
                 prevTrialCorrect   = good_trial;
                 prevTrialDirection = dirChosenStr;

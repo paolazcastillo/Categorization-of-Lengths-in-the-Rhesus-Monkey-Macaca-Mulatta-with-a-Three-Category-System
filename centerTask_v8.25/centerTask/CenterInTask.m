@@ -655,8 +655,16 @@ while exitFlag == 0
             % relay briefly stalls); log the cached last-known position
             % ReadCursorPosition just returned so trajN still advances
             % exactly once, same as every other input source.
+            % Stamped with the capture clock (the previous row's time), not
+            % the wall clock, so this cached row never runs ahead of the
+            % stream; same reasoning as CenterOutTask.m, 2026-09-10.
             trajN = trajN + 1;
-            trajBuf(trajN, :) = [trialIndex, (sampleTime - sessionT0) * 1000, x, y, nextEpoch, stimAttempt, NaN];
+            if trajN > 1 && ~isnan(trajBuf(trajN - 1, 2))
+                cachedTimeMs = trajBuf(trajN - 1, 2);
+            else
+                cachedTimeMs = (sampleTime - sessionT0) * 1000;
+            end
+            trajBuf(trajN, :) = [trialIndex, cachedTimeMs, x, y, nextEpoch, stimAttempt, NaN];
         else
             for bi = 1:size(rz2Batch, 1)
                 trajN = trajN + 1;
@@ -698,6 +706,10 @@ while exitFlag == 0
     % all three write paths above agree: on the rz2adc path row trajN is the
     % newest sample of the drained batch and carries ReadRZ2Joystick.m's
     % interpolated estimate, which is NOT sampleTime.
+    % Windows anchored on cursor events (t.centerHold, t.targetHit) and the
+    % target window anchored on the stimulus flip are all tested against
+    % trigTime, the capture clock, not this_time (2026-09-10). See the note
+    % at the same spot in CenterOutTask.m.
     trigTime = sessionT0 + trajBuf(trajN, 2) / 1000;
 
     % --- Clock-skew guard (rz2adc only) ----------------------------------
@@ -825,7 +837,7 @@ while exitFlag == 0
 
         case EP.HOLD
             holdColor = green_c;
-            if this_time > t.centerHold + holdTime && inCenterCircle
+            if trigTime > t.centerHold + holdTime && inCenterCircle
                 % The instant the hold requirement was MET, measured from
                 % the sample that met it -- the other end of HoldAchieved_s
                 % on trials that got this far. Always >= holdTime, by the
@@ -871,13 +883,13 @@ while exitFlag == 0
                 % latency at either end.
                 t.targetHit = trigTime;
                 nextEpoch = EP.TARGET_HOLD;
-            elseif this_time > t.targetOnset + targetDuration
+            elseif trigTime > t.targetOnset + targetDuration
                 error_type = 2;
                 nextEpoch = EP.ERROR_FB;
             end
 
         case EP.TARGET_HOLD
-            if this_time > t.targetHit + targetHoldTime && inTarget
+            if trigTime > t.targetHit + targetHoldTime && inTarget
                 reachTimePerDir{currentTargetDir}(end + 1) = t.targetHit - t.targetOnset;
                 correctPerDir(currentTargetDir) = correctPerDir(currentTargetDir) + 1;
                 t.reward = GetSecs();
