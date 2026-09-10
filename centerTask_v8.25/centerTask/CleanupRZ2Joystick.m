@@ -23,7 +23,7 @@ if isempty(rz2) || ~isfield(rz2, 'port') || isempty(rz2.port)
         class(rz2));
     return;
 end
-fprintf('RZ2 link: DIAGNOSTIC -- CleanupRZ2Joystick reached with a valid rz2.port.\n');
+fprintf('RZ2 link: transport = %s\n', rz2.port.describe());
 
 % Link summary before the socket goes away. These counters are the answer to
 % "was the joystick link actually healthy this session?", which used to be
@@ -144,10 +144,7 @@ catch ME_rz2sum
 end
 
 try
-    if ~rz2.useNewUDP
-        fclose(rz2.port);
-    end
-    delete(rz2.port);
+    rz2.port.close();
 catch
 end
 end

@@ -53,99 +53,36 @@ udpPort      = OrgGet(orgParams, 'rz2UdpPort', 8831);          % JoystickRelayTo
 localHost    = OrgGet(orgParams, 'localMachineHost', '172.24.60.146');
 relaySrcPort = OrgGet(orgParams, 'rz2RelaySourcePort', 8832);  % InitJoystickRelay.m's fixed outgoing port
 
-% Computer 1 pushes ~169 datagrams/s (one per relay cycle, N_READ samples
-% each -- see InitJoystickRelay.m's WIRE FORMAT note); this machine only
-% drains that queue once per task frame (see ReadRZ2Joystick.m). NOT setting
-% InputBufferSize on the udpport() branch below on purpose -- MATLAB has
-% deprecated that PROPERTY on udpport specifically, with no replacement
-% (still functional as of this writing, but flagged for removal), and its
-% default buffer has proven big enough in practice there.
+% Computer 1 pushes ~45 datagram pairs/s (two per relay cycle since
+% MAX_SAMPLES_PER_DGRAM went to 17 -- see InitJoystickRelay.m); this machine
+% drains that queue once per task frame (see ReadRZ2Joystick.m).
 %
-% 'datagram', not 'byte' (fixed 2026-08-04): ReadRZ2Joystick.m's drain loop
-% is written per-datagram (it gates on NumDatagramsAvailable and needs one
-% message per read, to mirror the legacy fallback's DatagramTerminateMode
-% behaviour). A BYTE-mode udpport has no NumDatagramsAvailable property at
-% all, so that branch threw "Unrecognized property" on the first frame --
-% it has never run. It was invisible on this rig only because R2016b has no
-% udpport() and always takes the legacy branch below; the first MATLAB
-% upgrade on Computer 2 would have broken rz2adc input outright.
+% TRANSPORT (2026-09-10). RZ2Link.m now owns the socket and picks the best
+% transport this MATLAB can offer: a non-blocking java.nio DatagramChannel
+% first, then udpport(), then the legacy udp() object. The legacy object is
+% what this R2016b machine used until now, and its Java helper thread hands
+% datagrams to MATLAB in clumps -- 33% of 67 ms drain windows arrived empty
+% on 09-Sep although the relay sends every ~23 ms. That clumping was most
+% of the ~72 ms sample age measured that day. The NIO channel reads the OS
+% queue directly; tested against a synthetic relay, the newest sample's age
+% at the drain is half a frame (9.5 ms median at 60 fps) and nothing else.
+% Which transport was actually opened is printed below and at teardown.
+%
+% InputBufferSize / InputDatagramPacketSize are still applied on the legacy
+% fallback; on the NIO channel the OS receive buffer is set to the same
+% size. See the pre-2026-09-10 history of this file for why both mattered.
 try
-    u = udpport('datagram', 'LocalPort', udpPort);
-    useNewUDP = true;
-catch
-    % udpport() was introduced in MATLAB R2019b -- undefined on older
-    % releases (confirmed on this rig's Computer 2, R2016b). Fall back to
-    % the legacy Instrument Control Toolbox udp() object, the same
-    % interface SetupSynapseUDP.m already uses successfully on this same
-    % machine (DatagramTerminateMode='on' -> one read = one datagram,
-    % matching ReadRZ2Joystick.m's per-packet drain loop). RemotePort must
-    % be relaySrcPort, NOT JoystickRelayToTask.m's old OS-assigned
-    % ephemeral send port -- an unpredictable source port would never
-    % match this object's RemoteHost/RemotePort receive filter and every
-    % datagram would be silently dropped.
-    try
-        u = udp(remoteHost, relaySrcPort, 'LocalHost', localHost, 'LocalPort', udpPort);
-        u.DatagramTerminateMode = 'on';
-        % InputBufferSize DOES need setting here -- unlike udpport's
-        % deprecated property above, this legacy object's InputBufferSize
-        % is a live, load-bearing setting (must be set before fopen()) and
-        % its DEFAULT is tiny (512 bytes on this toolbox), nowhere near
-        % enough for the incoming rate. Confirmed 2026-07-30: tcpdump on
-        % this machine showed relay packets arriving from Computer 1 in a
-        % continuous, unbroken stream (the network path is fine), while
-        % ReadRZ2Joystick.m only ever saw new data roughly once a minute --
-        % i.e. the OS/toolbox was silently dropping nearly everything
-        % before this object's BytesAvailable/fscanf ever saw it, for lack
-        % of room to hold it between per-frame drains.
-        %
-        % 262144, not 65536 (2026-08-04): the batched wire format packs
-        % N_READ samples into each datagram, so a datagram is now ~180
-        % bytes instead of ~19. Holding the same amount of TIME therefore
-        % needs proportionally more room -- 256 kB is ~8 s of full-rate
-        % traffic (~1450 datagrams), vs the ~2 s that 65536 would now buy.
-        % This is a ceiling on how stale the queue can get before the OS
-        % starts dropping, so it deliberately buys more time than a healthy
-        % drain needs (~3 datagrams/frame at 60 Hz); it is cheap at this
-        % size regardless.
-        %
-        % RAISED to 4 MB, 262144 -> 4194304 (2026-08-22): 262144 was sized
-        % for STEADY-state traffic (~8 s of backlog), not for absorbing a
-        % single large burst. Confirmed on this rig: a session logged
-        % nSkipped jumping by ~97,100 samples in one frame (DiagnoseRZ2Cursor
-        % export, two occurrences), exactly coincident with a matching jump
-        % in the computed LAG -- i.e. real data loss, not a computation
-        % bug. At ~29 bytes/sample, 262144 bytes holds only ~9,000 samples
-        % before the OS starts dropping -- an order of magnitude too small
-        % for a burst that size, regardless of how fast this machine drains
-        % it. 4 MB holds ~145,000 samples (~142 s at 1017 Hz), comfortably
-        % past the largest burst seen so far, at a cost (a few MB of RAM)
-        % that is irrelevant on any machine running this task. This does
-        % NOT fix whatever causes the burst in the first place -- it only
-        % keeps a burst of this size from being lost once it happens. See
-        % also maxSamplesPerDrain below, which governs how fast the backlog
-        % actually drains once buffered.
-        u.InputBufferSize = OrgGet(orgParams, 'rz2InputBufferSize', 4194304);
-        % InputDatagramPacketSize (2026-09-05): a DIFFERENT limit from the
-        % buffer above, and the one that was actually biting. It is the
-        % largest single datagram this object will hand back in one read,
-        % default 512 bytes; anything longer is cut there and the rest comes
-        % out of the NEXT fscanf as a fragment that starts mid-record. Each
-        % relay cycle was sending ~630 bytes. Result on sessPX-509: runs of
-        % exactly 18-19 samples, ~4 lost per datagram, 15% sustained loss,
-        % 66 "un-indexed" fragments, and two counted datagrams per real
-        % one. Raised here AND MAX_SAMPLES_PER_DGRAM lowered to 17 on
-        % Computer 1, so a datagram stays whole no matter which side's
-        % default someone resets.
-        u.InputDatagramPacketSize = OrgGet(orgParams, 'rz2InputDatagramPacketSize', 8192);
-        fopen(u);
-        useNewUDP = false;
-    catch ME_udp
-        error('centerTask:noRZ2UDP', ...
-            ['Could not open UDP listener on port %d for the RZ2 analog joystick relay: %s\n' ...
-             'Verify no other process (a stale MATLAB session, another task instance) ' ...
-             'already holds that port, and that JoystickRelayToTask.m on Computer 1 is ' ...
-             'configured to send to this machine on the same port.'], udpPort, ME_udp.message);
-    end
+    u = RZ2Link(localHost, udpPort, remoteHost, relaySrcPort, ...
+        OrgGet(orgParams, 'rz2InputBufferSize', 4194304), ...
+        OrgGet(orgParams, 'rz2InputDatagramPacketSize', 8192));
+    fprintf('RZ2 link: transport = %s\n', u.describe());
+    useNewUDP = ~u.isLegacy();
+catch ME_udp
+    error('centerTask:noRZ2UDP', ...
+        ['Could not open UDP listener on port %d for the RZ2 analog joystick relay: %s\n' ...
+         'Verify no other process (a stale MATLAB session, another task instance) ' ...
+         'already holds that port, and that JoystickRelayToTask.m on Computer 1 is ' ...
+         'configured to send to this machine on the same port.'], udpPort, ME_udp.message);
 end
 
 % .UserData carries the mutable state ReadRZ2Joystick.m/

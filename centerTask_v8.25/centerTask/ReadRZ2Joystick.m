@@ -63,24 +63,19 @@ nRows  = 0;
 capped = false;
 
 while true
-    if rz2.useNewUDP
-        anyPending = u.NumDatagramsAvailable > 0;
-    else
-        anyPending = u.BytesAvailable > 0;
-    end
-    if ~anyPending
-        break;
-    end
     if nRows >= maxSamples
         capped = true;
         break;
     end
 
-    if rz2.useNewUDP
-        d   = read(u, 1, 'char');   % exactly one datagram (see SetupRZ2Joystick.m)
-        raw = d.Data;
-    else
-        raw = fscanf(u);            % DatagramTerminateMode='on' -> one datagram
+    % One datagram per call, whatever the transport (RZ2Link.m). ok=false
+    % means the OS queue was empty at this instant, which on the java
+    % transport is the ONLY way to learn that -- there is no count to ask
+    % for, and that is deliberate: asking a helper thread how much it has
+    % buffered is exactly the indirection that cost ~40 ms per sample.
+    [raw, ok] = u.readOne();
+    if ~ok
+        break;
     end
     ud.nDatagrams = ud.nDatagrams + 1;   % DIAGNOSTIC (2026-08-21): one datagram consumed here
 
@@ -123,11 +118,9 @@ rows = rows(1:nRows, :);
 % floor, and feeding those pairs to the estimator is what lets a growing
 % backlog be absorbed into the rate instead of showing up as skew. See
 % RZ2ClockMap.m's ESTIMATOR note.
-if rz2.useNewUDP
-    backlog = u.NumDatagramsAvailable;
-else
-    backlog = u.BytesAvailable;   % bytes, not datagrams (legacy object)
-end
+% java: 0 if the drain ended on an empty queue, 1 if it ended on the cap
+% (queue non-empty, depth unknown). udpport: datagrams. legacy: bytes.
+backlog = u.pending();
 
 if nRows > 0
     idx = rows(:, 1);

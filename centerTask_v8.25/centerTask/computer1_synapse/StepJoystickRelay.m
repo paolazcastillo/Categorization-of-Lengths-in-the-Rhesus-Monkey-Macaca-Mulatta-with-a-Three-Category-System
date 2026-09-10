@@ -236,9 +236,29 @@ end   % if ~useWriteIdx  (recalibration is skipped in write-index mode)
 if useWriteIdx
     idxOk = true;
     tProf = tic;
+    state.cycleN = state.cycleN + 1;
     try
         Wx = mod(round(double(readWriteIndex(state.syn, 'APICh1X', state.WRITE_IDX_TAG_X))), state.BUF_SIZE);
-        Wy = mod(round(double(readWriteIndex(state.syn, 'APICh2Y', state.WRITE_IDX_TAG_Y))), state.BUF_SIZE);
+        % Y's index is read every IDX_Y_CHECK_EVERY cycles (or every cycle
+        % once a divergence has been seen); otherwise it is assumed equal
+        % to X. See InitJoystickRelay.m for why this is safe and ~5 ms
+        % cheaper per cycle.
+        if state.readBothIdx || mod(state.cycleN, state.IDX_Y_CHECK_EVERY) == 0
+            Wy = mod(round(double(readWriteIndex(state.syn, 'APICh2Y', state.WRITE_IDX_TAG_Y))), state.BUF_SIZE);
+            state.lastWy = Wy;
+            if ~state.readBothIdx
+                state.nIdxYChecks = state.nIdxYChecks + 1;
+                if abs(circDelta(Wy, Wx, state.BUF_SIZE)) > state.IDX_Y_TOL
+                    state.nIdxYDiverged = state.nIdxYDiverged + 1;
+                    state.readBothIdx   = true;
+                    warning(['Joystick relay: Y write index differs from X by %d samples; ' ...
+                             'reading both indices every cycle from now on.'], ...
+                            circDelta(Wy, Wx, state.BUF_SIZE));
+                end
+            end
+        else
+            Wy = Wx;
+        end
     catch ME_idx
         idxOk = false;
         if ~state.widxFellBack
@@ -417,6 +437,9 @@ if toc(state.tLogRef) >= 5
             (state.profIdxMs + state.profReadMs + state.profSendMs) / state.profCycles, state.profCycles);
         if state.nReadErrors > 0
             fprintf(' | readErrors %d', state.nReadErrors);
+        end
+        if state.nIdxYDiverged > 0
+            fprintf(' | Y-index divergences %d (reading both)', state.nIdxYDiverged);
         end
         fprintf('\n');
         state.profIdxMs = 0; state.profReadMs = 0; state.profSendMs = 0; state.profCycles = 0;

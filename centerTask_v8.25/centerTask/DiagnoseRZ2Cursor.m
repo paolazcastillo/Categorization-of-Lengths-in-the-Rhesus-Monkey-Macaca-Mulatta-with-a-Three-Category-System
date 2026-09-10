@@ -289,11 +289,11 @@ try
         frameN = frameN + 1;
 
         % Peek BEFORE this frame's drain -- see header note on preBacklog.
-        if rz2.useNewUDP
-            preBacklog = rz2.port.NumDatagramsAvailable;
-        else
-            preBacklog = rz2.port.BytesAvailable;
-        end
+        % RZ2Link.m: datagrams (udpport), bytes (legacy), or on the java
+        % transport only 0/1 -- whether the previous drain ended on an
+        % empty queue. The java channel has no queue-depth query, and that
+        % is the point of it (see SetupRZ2Joystick.m).
+        preBacklog = rz2.port.pending();
 
         [vx, vy] = ReadRZ2Joystick(rz2);   % same call the real task makes (this build
                                             % also counts raw datagrams -- see

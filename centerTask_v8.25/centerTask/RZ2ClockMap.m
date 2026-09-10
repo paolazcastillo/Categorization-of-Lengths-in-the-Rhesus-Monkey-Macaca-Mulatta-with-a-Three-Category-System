@@ -97,9 +97,17 @@ classdef RZ2ClockMap < handle
 %             the limit, and the rest is applied over later fits. This is
 %             how every disciplined clock behaves (a PLL slews, it does not
 %             step) and it is what makes the output monotone by
-%             construction rather than by clamping. The first fit after
-%             warm-up is exempt: it replaces a single-pair anchor and is
-%             allowed to snap.
+%             construction rather than by clamping.
+%
+%             NO EXEMPTION FOR THE FIRST FIT (2026-09-10). It used to be
+%             allowed to snap from the single-pair warm-up anchor straight
+%             to the quantile line. On 09-Sep that snap was 193 ms
+%             backwards (the first pair happened to carry a long latency)
+%             and produced 180 clamped samples in the first seconds of the
+%             session. Now every fit slews; during the first warmupFits
+%             fits the limit is warmupSlewMult times larger, so the
+%             warm-up error is worked off in about a second without ever
+%             stepping the output.
 %
 % WHAT IS NOT FIXED HERE. The floor latency itself is invisible from this
 % side: a link that is uniformly 8 ms slow looks exactly like a link that is
@@ -127,6 +135,8 @@ classdef RZ2ClockMap < handle
         offsetQuantile          % residual quantile the offset is anchored on (0 = strict minimum)
         offsetWindow            % most recent observations the offset quantile is taken over
         maxSlewSec              % largest move of t(newest idx) one refit may apply
+        warmupFits              % fits during which the slew limit is multiplied
+        warmupSlewMult          % that multiplier
         nSlewLimited            % refits whose move was cut to maxSlewSec
         nObs                    % observations accepted
         nObsRejected            % observations refused because the queue was not clear
@@ -169,6 +179,8 @@ classdef RZ2ClockMap < handle
             obj.offsetQuantile     = min(max(offsetQuantile, 0), 0.5);
             obj.maxSlewSec         = abs(maxSlewSec);
             obj.offsetWindow       = max(round(offsetWindow), 2);
+            obj.warmupFits         = 100;
+            obj.warmupSlewMult     = 5;
             obj.minSpanSec         = abs(minSpanSec);
             obj.nSlopeFits         = 0;
             obj.nSlewLimited       = 0;
@@ -303,14 +315,16 @@ classdef RZ2ClockMap < handle
             % Slew limit, evaluated where it matters: at the newest index
             % in the window, which is where the next sample will be stamped.
             xNew = x(obj.head);
-            if obj.nFits > 0
-                tOld  = obj.offset + obj.secPerSample * xNew;
-                tNew  = bNew + a * xNew;
-                move  = tNew - tOld;
-                if abs(move) > obj.maxSlewSec
-                    bNew = bNew - (move - sign(move) * obj.maxSlewSec);
-                    obj.nSlewLimited = obj.nSlewLimited + 1;
-                end
+            slew = obj.maxSlewSec;
+            if obj.nFits < obj.warmupFits
+                slew = slew * obj.warmupSlewMult;
+            end
+            tOld  = obj.offset + obj.secPerSample * xNew;
+            tNew  = bNew + a * xNew;
+            move  = tNew - tOld;
+            if abs(move) > slew
+                bNew = bNew - (move - sign(move) * slew);
+                obj.nSlewLimited = obj.nSlewLimited + 1;
             end
 
             obj.secPerSample = a;

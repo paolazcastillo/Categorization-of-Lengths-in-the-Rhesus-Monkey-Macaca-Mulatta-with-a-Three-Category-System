@@ -38,17 +38,7 @@ end
 
 u = rz2.port;
 try
-    if rz2.useNewUDP
-        nDropped = u.NumDatagramsAvailable;
-        if nDropped > 0
-            flush(u, 'input');
-        end
-    else
-        nDropped = u.BytesAvailable;
-        if nDropped > 0
-            flushinput(u);
-        end
-    end
+    nDropped = u.flush();   % RZ2Link.m: datagrams (java/udpport) or bytes (legacy)
 catch
     return;   % nothing discarded, nothing broken
 end
@@ -56,7 +46,7 @@ end
 try
     ud = u.UserData;
     if isstruct(ud)
-        ud.batch = zeros(0, 3);
+        ud.batch = zeros(0, 4);
         % lastIdx = NaN so the NEXT drain does not read this deliberate
         % discard as a gap in the sample stream: nSkipped is meant to count
         % datagrams LOST (network drops, relay recalibration jumps), and

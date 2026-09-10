@@ -358,6 +358,24 @@ state.profSendMs  = 0;    % sprintf + fwrite/write of the datagram(s)
 state.profCycles  = 0;    % cycles that did work since the last log line
 state.nReadErrors = 0;    % readBufWindow failures (see the absIdx note in StepJoystickRelay.m)
 
+% One write-index read per cycle, not two (2026-09-10). The profiling
+% above showed every SynapseAPI call costs ~5 ms regardless of payload, so
+% the two index reads were 10 of the 22 ms cycle. X and Y are written by
+% the same circuit off the same clock and their write indices advance in
+% lockstep by construction (StepJoystickRelay.m already took the min of the
+% two and never saw them differ). So: read X every cycle, read Y only every
+% IDX_Y_CHECK_EVERY cycles as a consistency check. If a check ever finds
+% them apart by more than IDX_Y_TOL samples, the relay warns once and falls
+% back to reading both every cycle for the rest of the session -- the
+% shortcut is only taken while the evidence says it is safe.
+state.IDX_Y_CHECK_EVERY = 10;
+state.IDX_Y_TOL         = 2;
+state.readBothIdx       = false;
+state.cycleN            = 0;
+state.nIdxYChecks       = 0;
+state.nIdxYDiverged     = 0;
+state.lastWy            = NaN;
+
 % --- UDP init ---
 fprintf('Opening UDP to %s:%d...\n', state.REMOTE_HOST, state.UDP_PORT);
 try
