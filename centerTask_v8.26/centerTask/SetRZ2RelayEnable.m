@@ -19,5 +19,14 @@ function SetRZ2RelayEnable(enable, uSynapse)
 if nargin < 2 || isempty(uSynapse)
     return;
 end
-fprintf(uSynapse, sprintf('rz2RelayEnable=%d;\n', double(logical(enable))));  % Agregar \n
+try
+    fprintf(uSynapse, sprintf('rz2RelayEnable=%d;\n', double(logical(enable))));  % Agregar \n
+catch ME
+    % Same philosophy as ConfirmRecordingLink.m / Rewards.m: a marker write
+    % must never abort the session. If uSynapse was already closed by an
+    % out-of-order teardown, warn and continue rather than propagate.
+    warning('SetRZ2RelayEnable:writeFailed', ...
+        'Could not write rz2RelayEnable=%d to Synapse link: %s', ...
+        double(logical(enable)), ME.message);
+end
 end

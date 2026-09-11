@@ -49,6 +49,7 @@ classdef RZ2Link < handle
         lastReadEmpty       % true when the last readOne() found nothing (java mode)
         nReadCalls
         nReadEmpty
+        nReadErrors         % readOne() calls that threw (java mode) and were treated as empty
     end
 
     properties (Access = private)
@@ -69,6 +70,7 @@ classdef RZ2Link < handle
             obj.lastReadEmpty   = true;
             obj.nReadCalls      = 0;
             obj.nReadEmpty      = 0;
+            obj.nReadErrors     = 0;
             obj.UserData        = struct();
 
             errs = {};
@@ -129,7 +131,21 @@ classdef RZ2Link < handle
             switch obj.mode
                 case 'java'
                     obj.jbuf.clear();
-                    src = obj.ch.receive(obj.jbuf);
+                    try
+                        src = obj.ch.receive(obj.jbuf);
+                    catch ME
+                        % A transient Java exception on the non-blocking
+                        % receive (e.g. an ICMP port-unreachable if the
+                        % Computer 1 relay bounces) used to propagate out of
+                        % readOne() uncaught and abort the whole session for
+                        % a condition that, like an empty datagram, is
+                        % recoverable on the next frame. Count and treat it
+                        % as an empty read instead.
+                        obj.nReadErrors = obj.nReadErrors + 1;
+                        obj.lastReadEmpty = true;
+                        obj.nReadEmpty = obj.nReadEmpty + 1;
+                        return;
+                    end
                     if isempty(src)
                         obj.lastReadEmpty = true;
                         obj.nReadEmpty = obj.nReadEmpty + 1;
@@ -138,6 +154,7 @@ classdef RZ2Link < handle
                     n = obj.jbuf.position();
                     if n <= 0
                         obj.lastReadEmpty = true;
+                        obj.nReadEmpty = obj.nReadEmpty + 1;
                         return;
                     end
                     obj.jbuf.flip();

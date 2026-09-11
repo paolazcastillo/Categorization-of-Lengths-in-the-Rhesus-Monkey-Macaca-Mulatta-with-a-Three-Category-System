@@ -40,6 +40,17 @@ if nargin < 3 || isempty(uSynapse)
     return;
 end
 
+if ~isscalar(amount) || ~isfinite(amount)
+    % MATLAB's max()/min() silently pick the non-NaN operand, so a NaN
+    % `amount` would otherwise clamp to 1 ms below and deliver a reward
+    % nobody asked for instead of erroring. OrgGet already filters NaN on
+    % the normal call path (CenterOutTask.m/CenterInTask.m), so this only
+    % fires for a caller that bypasses it -- exactly the case with no other
+    % guard.
+    warning('rewards:badAmount', 'Reward amount is not finite (%g); reward not sent.', amount);
+    return;
+end
+
 rewDurationMs = round(amount * 1000);
 rewDurationMs = min(max(rewDurationMs, 1), 1000);   % Synapse TriggerDuration range: 1-1000
 deliveredSec  = n * rewDurationMs / 1000;           % post-clamp: what the valve actually opens for
@@ -51,7 +62,16 @@ deliveredSec  = n * rewDurationMs / 1000;           % post-clamp: what the valve
 % long before. This is the same duration deliveredSec reports.
 pulseSec = rewDurationMs / 1000;
 for i = 1:n
-    fprintf(uSynapse, sprintf('reward=1;rewDuration=%d;\n', rewDurationMs));  % Agregar \n
+    try
+        fprintf(uSynapse, sprintf('reward=1;rewDuration=%d;\n', rewDurationMs));  % Agregar \n
+    catch ME
+        % Same philosophy as ConfirmRecordingLink.m: a marker/reward write
+        % must never abort the session. Warn and keep the timing (the
+        % subject still waits out the pulse it may not have received)
+        % instead of propagating and killing the run over one dropped write.
+        warning('rewards:writeFailed', 'Could not write reward pulse %d/%d to Synapse link: %s', ...
+            i, n, ME.message);
+    end
     WaitSecs(pulseSec);
     WaitSecs(0.3);
 end

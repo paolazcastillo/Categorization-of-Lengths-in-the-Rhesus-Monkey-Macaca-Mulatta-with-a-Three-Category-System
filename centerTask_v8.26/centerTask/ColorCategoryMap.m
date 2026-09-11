@@ -79,8 +79,12 @@ classdef ColorCategoryMap
             %   OUTPUT
             %     rgb : [1 x 3] RGB values (0-255)
 
-            if cat < 1 || cat > self.NUM_CATEGORIES
-                error('Category must be 1, 2, or 3; got %d', cat);
+            if ~isfinite(cat) || cat < 1 || cat > self.NUM_CATEGORIES
+                % ~isfinite() catches NaN explicitly: cat<1 and cat>NUM_CATEGORIES
+                % are both false for NaN, so without this a NaN category would
+                % fall through to the indexing below and throw MATLAB's generic
+                % index error instead of this function's descriptive one.
+                error('Category must be 1, 2, or 3; got %g', cat);
             end
             rgb = self.category_to_rgb_table(cat, :);
         end

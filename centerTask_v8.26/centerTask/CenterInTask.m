@@ -171,8 +171,12 @@ holdTime_delta  = OrgGet(orgParams, 'holdTimeDelta', 0.5);
 holdTime_min    = holdTime_base - holdTime_delta;
 holdTime_max    = holdTime_base + holdTime_delta;
 
-successFeed = 0.2;    % success feedback duration
-errorFeed   = 0.2;    % error feedback duration (how long the error flash lasts)
+% Shared console fields (see CenterConsole.m Timing panel, 'Success/Error
+% feedback (s)' -> tarHoldFeed/tarErrorFeed): CenterOutTask.m already reads
+% these via OrgGet; this engine used to ignore them and hardcode 0.2/0.2, so
+% changing those console fields silently did nothing for Center-In sessions.
+successFeed = OrgGet(orgParams, 'tarHoldFeed',  0.2);   % success feedback duration
+errorFeed   = OrgGet(orgParams, 'tarErrorFeed', 0.2);   % error feedback duration (how long the error flash lasts)
 % Half-period of the error screen flash: the display alternates white/black
 % every errorFlashPeriod seconds while errorFeed runs, so the default pair
 % gives one full white-black blink per failed trial. Same 0.1 s as
@@ -191,6 +195,10 @@ rewTime     = OrgGet(orgParams, 'Reward', 0.15);
 % both engines, no separate reach-only fields needed.
 useTargetReach = logical(OrgGet(orgParams, 'useTargetReach', 0));
 targetWeights  = OrgGet(orgParams, 'targetWeights', [0.25 0.25 0.25 0.25]);
+% NOT console-editable (unlike minTarHoldTime below): CenterConsole.m has no
+% Timing-panel row bound to 'targetDuration', only CenterOutTask.m's split
+% maxDecisionTime/maxExecutionTime fields. Change the ConfigOrgParams.m
+% default below to adjust this engine's reach timeout for now.
 targetDuration = OrgGet(orgParams, 'targetDuration', 5);      % reach timeout
 targetHoldTime = OrgGet(orgParams, 'minTarHoldTime', 0.05);   % hold-in-target time before it counts as good (s); 0 = touch is enough
 
@@ -1149,7 +1157,10 @@ try
     % this produced before. No movement-only cut is written (that is
     % SaveMovementTrajectory.m's job, and this engine has no MOVEMENT epoch
     % to filter on).
-    SaveTrajectory(trajBuf, trajN, outDir, ['centerIn_' d], sessionDate);
+    % 7 = trajBuf's own preallocated width (see "trajBuf = zeros(trajChunk, 7)"
+    % above), not derived from trajBuf at this point -- see expectedRawCols
+    % in SaveTrajectory.m for why that distinction is the whole point.
+    SaveTrajectory(trajBuf, trajN, outDir, ['centerIn_' d], sessionDate, true, true, 7);
 catch ME_save
     fprintf('WARNING: error during matrix computation or save: %s\n', ME_save.message);
 end
@@ -1206,7 +1217,7 @@ catch ME
             && exist('outDir', 'var') && exist('d', 'var')
         try
             if exist('sessionDate', 'var'), dateForLog = sessionDate; else, dateForLog = datestr(now, 'dd-mm-yyyy'); end
-            SaveTrajectory(trajBuf, trajN, outDir, ['centerIn_' d], dateForLog);
+            SaveTrajectory(trajBuf, trajN, outDir, ['centerIn_' d], dateForLog, true, true, 7);
             fprintf('Trajectory salvaged after crash: %d samples\n', trajN);
         catch
             fprintf('WARNING: could not salvage trajectory after crash.\n');

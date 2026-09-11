@@ -145,6 +145,14 @@ end
 
 try
     rz2.port.close();
-catch
+catch ME_portClose
+    % This is the exact step whose silent failure reproduced the "Address
+    % already in use" bug on port 8831 the next session (see the DIAGNOSTIC
+    % notes above) -- the one catch in this file that most needs to not be
+    % silent, so it stayed silent the longest. If close() throws, the port
+    % may still be bound; say so now, while there is still a chance to act,
+    % instead of only finding out when the next session fails to open it.
+    fprintf('RZ2 link: WARNING -- rz2.port.close() threw: %s (%s). Port may still be bound; watch for "Address already in use" next session.\n', ...
+        ME_portClose.message, ME_portClose.identifier);
 end
 end

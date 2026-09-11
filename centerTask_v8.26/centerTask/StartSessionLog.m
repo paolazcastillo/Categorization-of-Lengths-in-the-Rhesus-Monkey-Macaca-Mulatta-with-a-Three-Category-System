@@ -44,8 +44,20 @@ prevState = get(0, 'Diary');
 prevFile  = get(0, 'DiaryFile');
 restoreLog = onCleanup(@() restoreDiaryState(prevState, prevFile));
 
-diary(logFile);   % sets the file and turns the diary on
-diary('on');      % explicit, in case it was already on for another file
+try
+    diary(logFile);   % sets the file and turns the diary on
+    diary('on');      % explicit, in case it was already on for another file
+catch ME
+    % An invalid logFile (missing folder, unmounted drive, full disk) must
+    % not abort session startup over a transcript that is a convenience, not
+    % a requirement -- the trial/trajectory files are written independently.
+    % The caller's diary state is still restored on cleanup, so a failed
+    % diary() call here (which leaves the diary state unchanged) is safe to
+    % just warn about and continue.
+    warning('StartSessionLog:diaryFailed', ...
+        'Could not start session log at "%s" (%s). Continuing without a console transcript.', ...
+        logFile, ME.message);
+end
 
 fprintf('===========================================================\n');
 fprintf('SESSION LOG -- %s\n', engineName);

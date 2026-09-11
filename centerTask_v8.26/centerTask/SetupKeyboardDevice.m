@@ -65,13 +65,28 @@ else
 end
 
 useKbQueue = false;
+kqCreated  = false;
 try
     kqList = zeros(1, 256);
     kqList(keysToWatch) = 1;
     KbQueueCreate(kbDevice, kqList);
+    kqCreated = true;   % device-level resource now exists; must be released on any later failure
     KbQueueStart(kbDevice);
     useKbQueue = true;
 catch
     useKbQueue = false;
+    if kqCreated
+        % KbQueueCreate succeeded but KbQueueStart (or anything else in the
+        % try) then threw: the queue it created is otherwise never released,
+        % so a later SetupKeyboardDevice call on the same kbDevice (a
+        % restarted session) can fail with "queue already exists" instead of
+        % just retrying cleanly.
+        try
+            KbQueueRelease(kbDevice);
+        catch
+            % Best-effort: releasing a queue that failed to start is a
+            % diagnostic nicety, not something that may itself abort setup.
+        end
+    end
 end
 end

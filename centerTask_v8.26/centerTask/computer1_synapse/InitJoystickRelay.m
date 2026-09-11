@@ -424,6 +424,15 @@ catch
     fopen(state.udpObj);
     state.useNewUDP = false;
 end
+% Everything below only sets plain struct fields and prints -- low risk, but
+% not zero, and if any of it throws after the socket above already opened,
+% that socket was never released: nothing downstream calls
+% CleanupJoystickRelay.m on a half-built `state` it never received. Wrapped
+% (2026-09-10) so a failure here closes what was just opened before
+% propagating, instead of leaking the bind on RELAY_LOCAL_PORT (8832) until
+% the next call fails with "address already in use".
+try
+
 % Max samples packed into a single UDP datagram. Time-based pacing can read
 % many samples in one cycle (a slow cycle catches up), so the send loop below
 % splits them across several datagrams rather than one oversized one.
@@ -514,4 +523,18 @@ fprintf('\nJoystick relay ready: %.4g Hz, %d samples/channel/cycle (~%.5g sample
     state.RELAY_HZ, state.N_READ, state.RELAY_HZ * state.N_READ, recalStr);
 fprintf('%-8s %-8s %-11s %-9s %-11s %-11s %-11s %-11s\n', ...
     'Samples', 'Dgrams', 'Recal_ok', 'Recal_ms', 'JoyX_raw', 'JoyX_norm', 'JoyY_raw', 'JoyY_norm');
+
+catch ME_postSocket
+    try
+        if state.useNewUDP
+            delete(state.udpObj);
+        else
+            fclose(state.udpObj);
+            delete(state.udpObj);
+        end
+    catch
+        % Best-effort: do not let a cleanup failure hide the original error.
+    end
+    rethrow(ME_postSocket);
+end
 end

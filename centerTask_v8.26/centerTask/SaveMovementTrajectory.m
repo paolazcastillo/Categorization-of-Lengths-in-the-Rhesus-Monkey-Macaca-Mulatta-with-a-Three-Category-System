@@ -1,4 +1,4 @@
-function SaveMovementTrajectory(trajBuf, trajN, outDir, runTag, sessionDate, movementEpochs, saveAsMat, saveCsv)
+function SaveMovementTrajectory(trajBuf, trajN, outDir, runTag, sessionDate, movementEpochs, saveAsMat, saveCsv, expectedRawCols)
     % SAVEMOVEMENTTRAJECTORY  Movement-only trajectory export.
     %
     %   Same columns as trajectory_*.{mat,csv}, but rows restricted to
@@ -52,6 +52,12 @@ function SaveMovementTrajectory(trajBuf, trajN, outDir, runTag, sessionDate, mov
     %                      never calls this).
     %     saveAsMat      : bool, save .mat file (default: true)
     %     saveCsv        : bool, save .csv file (default: true)
+    %     expectedRawCols : optional. The engine's OWN literal trajBuf column
+    %                    count (e.g. 9 for CenterOutTask.m, 7 for
+    %                    CenterInTask.m -- from trajBuf's preallocation, not
+    %                    from trajBuf itself). When given, a mismatch against
+    %                    size(trajBuf, 2) is treated as a save failure; see
+    %                    SaveTrajectory.m for why.
     %
     %   OUTPUT
     %     none (side effects: files written to disk)
@@ -90,6 +96,16 @@ function SaveMovementTrajectory(trajBuf, trajN, outDir, runTag, sessionDate, mov
         end
     end
 
+    % Guard: caller-declared layout mismatch. See expectedRawCols above.
+    if nargin >= 9 && ~isempty(expectedRawCols) && size(trajBuf, 2) ~= expectedRawCols
+        ME = MException('SaveMovementTrajectory:columnMismatch', ...
+            'trajBuf has %d columns but the caller declared %d -- refusing to guess a layout.', ...
+            size(trajBuf, 2), expectedRawCols);
+        fprintf('WARNING: %s\n', ME.message);
+        WriteSaveFailureMarker(fullfile(outDir, sprintf('trajectory_movement_%s', runTag)), ME);
+        return;
+    end
+
     % Extract trajectory (remove TrialNum column 1) and keep rows matching
     % ANY of movementEpochs (ismember; a scalar movementEpochs behaves
     % exactly as the old single-epoch == comparison did).
@@ -100,6 +116,7 @@ function SaveMovementTrajectory(trajBuf, trajN, outDir, runTag, sessionDate, mov
         nMoveRows = size(trajectoryMovement, 1);
     catch ME
         fprintf('WARNING: could not extract movement trajectory from buffer: %s\n', ME.message);
+        WriteSaveFailureMarker(fullfile(outDir, sprintf('trajectory_movement_%s', runTag)), ME);
         return;
     end
 
@@ -116,6 +133,7 @@ function SaveMovementTrajectory(trajBuf, trajN, outDir, runTag, sessionDate, mov
         trajectoryMovement = AppendMoveTime(trajectoryMovement);
     catch ME
         fprintf('WARNING: could not compute per-record movement time: %s\n', ME.message);
+        WriteSaveFailureMarker(fullfile(outDir, sprintf('trajectory_movement_%s', runTag)), ME);
         return;
     end
 
@@ -134,6 +152,7 @@ function SaveMovementTrajectory(trajBuf, trajN, outDir, runTag, sessionDate, mov
             fprintf('Movement-only trajectory saved to: %s (%d samples)\n', matFile, nMoveRows);
         catch ME
             fprintf('WARNING: could not save movement trajectory .mat: %s\n', ME.message);
+            WriteSaveFailureMarker(matFile, ME);
         end
     end
 
@@ -153,6 +172,7 @@ function SaveMovementTrajectory(trajBuf, trajN, outDir, runTag, sessionDate, mov
             fprintf('Movement-only trajectory exported to: %s (%d samples)\n', csvFile, nMoveRows);
         catch ME
             fprintf('WARNING: could not save movement trajectory .csv: %s\n', ME.message);
+            WriteSaveFailureMarker(csvFile, ME);
         end
     end
 end

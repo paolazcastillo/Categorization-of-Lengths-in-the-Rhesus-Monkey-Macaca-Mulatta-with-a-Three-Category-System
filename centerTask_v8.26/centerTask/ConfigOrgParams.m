@@ -27,10 +27,9 @@ classdef ConfigOrgParams
             % Returns a struct of all default organisation parameters.
             %
             % All fields here are read by the engine via OrgGet and can be
-            % overridden from orgParams (console GUI or offline script). The two
-            % exceptions are marked [NOT WIRED]: barStaysVisible (hardcoded in
-            % the engine loop) and targetRadius (derived from centerToTargetDist,
-            % so setting it directly has no effect).
+            % overridden from orgParams (console GUI or offline script). The one
+            % exception is marked [NOT WIRED]: barStaysVisible (hardcoded in
+            % the engine loop).
 
             % === SESSION ===
             orgParams.runTag   = datestr(now, 'dd-mmm-yyyy_HH-MM');  % file naming
@@ -203,7 +202,6 @@ classdef ConfigOrgParams
             orgParams.centerRad           = 200;    % centre hold-window diameter
             orgParams.targetRad           = 180;    % peripheral target diameter (CenterOutTask.m and CenterInTask.m reach mode)
             orgParams.centerToTargetDist  = 320;    % centre-to-target distance (px); ring radius = this * 1.27
-            orgParams.targetRadius        = 100;    % [NOT WIRED] engine derives this from centerToTargetDist; setting it here has no effect
             orgParams.screenViewingDist_mm = 400;   % viewing distance (mm); affects bar sizes in deg VA
             orgParams.screenPixelPitch    = 0.3108; % pixel pitch (mm/px); affects bar sizes (deg VA -> px)
 

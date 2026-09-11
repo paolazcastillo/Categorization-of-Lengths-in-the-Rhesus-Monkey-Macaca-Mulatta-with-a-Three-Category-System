@@ -1,4 +1,4 @@
-function SaveTrajectory(trajBuf, trajN, outDir, runTag, sessionDate, saveAsMat, saveCsv)
+function SaveTrajectory(trajBuf, trajN, outDir, runTag, sessionDate, saveAsMat, saveCsv, expectedRawCols)
     % SAVETRAJECTORY  Full multi-epoch trajectory export (normal and crash-recovery).
     %
     %   Consolidates the identical trajectory-saving logic that used to appear
@@ -27,6 +27,16 @@ function SaveTrajectory(trajBuf, trajN, outDir, runTag, sessionDate, saveAsMat, 
     %     sessionDate  : session date string for CSV rows
     %     saveAsMat    : bool, save .mat file (default: true)
     %     saveCsv      : bool, save .csv file (default: true)
+    %     expectedRawCols : optional. The engine's OWN literal trajBuf column
+    %                    count (e.g. 9 for CenterOutTask.m, 7 for
+    %                    CenterInTask.m -- from trajBuf's preallocation, not
+    %                    from trajBuf itself). When given, a mismatch against
+    %                    size(trajBuf, 2) is treated as a save failure instead
+    %                    of silently falling through to
+    %                    TrajectoryColumnNames.m's column-count layout
+    %                    detection, which cannot otherwise tell "this session
+    %                    used the pre-2026-09-04 layout" apart from "a bug
+    %                    truncated this session's buffer".
     %
     %   OUTPUT
     %     none (side effects: files written to disk)
@@ -65,11 +75,22 @@ function SaveTrajectory(trajBuf, trajN, outDir, runTag, sessionDate, saveAsMat, 
         end
     end
 
+    % Guard: caller-declared layout mismatch. See expectedRawCols above.
+    if nargin >= 8 && ~isempty(expectedRawCols) && size(trajBuf, 2) ~= expectedRawCols
+        ME = MException('SaveTrajectory:columnMismatch', ...
+            'trajBuf has %d columns but the caller declared %d -- refusing to guess a layout.', ...
+            size(trajBuf, 2), expectedRawCols);
+        fprintf('WARNING: %s\n', ME.message);
+        WriteSaveFailureMarker(fullfile(outDir, sprintf('trajectory_%s', runTag)), ME);
+        return;
+    end
+
     % Extract trajectory (remove TrialNum column 1)
     try
         trajectory = trajBuf(1:trajN, 2:end);
     catch ME
         fprintf('WARNING: could not extract trajectory from buffer: %s\n', ME.message);
+        WriteSaveFailureMarker(fullfile(outDir, sprintf('trajectory_%s', runTag)), ME);
         return;
     end
 
@@ -92,6 +113,7 @@ function SaveTrajectory(trajBuf, trajN, outDir, runTag, sessionDate, saveAsMat, 
             fprintf('Trajectory saved to: %s (%d samples)\n', matFile, trajN);
         catch ME
             fprintf('WARNING: could not save trajectory .mat: %s\n', ME.message);
+            WriteSaveFailureMarker(matFile, ME);
         end
     end
 
@@ -108,6 +130,7 @@ function SaveTrajectory(trajBuf, trajN, outDir, runTag, sessionDate, saveAsMat, 
             fprintf('Trajectory CSV exported to: %s (%d samples)\n', csvFile, trajN);
         catch ME
             fprintf('WARNING: could not save trajectory .csv: %s\n', ME.message);
+            WriteSaveFailureMarker(csvFile, ME);
         end
     end
 end

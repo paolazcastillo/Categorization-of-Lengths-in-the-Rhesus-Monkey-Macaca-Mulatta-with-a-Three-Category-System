@@ -36,6 +36,18 @@ classdef ClockSkewMonitor < handle
 % backlog cannot hide. The instantaneous value still drives the warning and
 % the maxSkewSec statistic, so the jitter stays visible in the report.
 %
+% NON-FINITE SKEW IS NOT "NOTHING TO REPORT" (2026-09-10). update() used to
+% just return on a NaN/Inf skewSec -- which is exactly what it receives every
+% frame while RZ2ClockMap has not anchored yet (addObservation only anchors
+% on a drain that left the queue clear; see RZ2ClockMap.m). If the queue
+% never clears for the whole session, the clock map NEVER anchors,
+% indexToTime returns NaN forever, skewSec is NaN every frame, and this
+% monitor -- built specifically to catch a bad time base -- saw nothing to
+% warn about while every trigTime for the session was invalid. A sustained
+% run of non-finite updates now trips the same abort path as a sustained
+% skew, on the theory that "no measurement available" for that long is
+% itself the fault this monitor exists to catch.
+%
 % The trip is latching: once tripped it stays tripped, so a caller that
 % polls after the fact still sees it.
 %
@@ -58,6 +70,10 @@ classdef ClockSkewMonitor < handle
         trippedAtSkew       % the sustained |skew| that tripped it
         windowLen           % updates in the sustained (median) window
         maxSustainedSec     % worst median seen this session
+        nNonFinite           % updates whose skew was NaN/Inf (clock map not anchored / unavailable)
+        consecNonFinite      % current run of consecutive non-finite updates
+        maxConsecNonFinite   % worst such run this session
+        nonFiniteAbortRun    % consecutive non-finite updates that trip the abort path
     end
 
     properties (Access = private)
@@ -67,7 +83,7 @@ classdef ClockSkewMonitor < handle
     end
 
     methods
-        function obj = ClockSkewMonitor(warnSec, abortSec, warnPeriodSec, windowLen)
+        function obj = ClockSkewMonitor(warnSec, abortSec, warnPeriodSec, windowLen, nonFiniteAbortRun)
             if nargin < 1 || isempty(warnSec), warnSec = 0.05; end
             if nargin < 2 || isempty(abortSec), abortSec = 0.20; end
             if nargin < 3 || isempty(warnPeriodSec), warnPeriodSec = 5; end
@@ -90,13 +106,43 @@ classdef ClockSkewMonitor < handle
             obj.ring          = zeros(obj.windowLen, 1);
             obj.head          = 0;
             obj.count         = 0;
+            obj.nNonFinite         = 0;
+            obj.consecNonFinite    = 0;
+            obj.maxConsecNonFinite = 0;
+            % Default: 10x the sustained-skew window (~15 s at the 90-frame/
+            % 1.5 s default), long enough to cover ordinary startup before the
+            % first RZ2 observation lands, short enough not to burn a whole
+            % session on a clock map that never anchors.
+            if nargin < 5 || isempty(nonFiniteAbortRun)
+                nonFiniteAbortRun = 10 * obj.windowLen;
+            end
+            obj.nonFiniteAbortRun = max(round(nonFiniteAbortRun), 1);
         end
 
         function isTripped = update(obj, skewSec, nowSec)
             isTripped = obj.tripped;
-            if ~isscalar(skewSec) || ~isfinite(skewSec) || obj.tripped
+            if obj.tripped
                 return;
             end
+            if ~isscalar(skewSec) || ~isfinite(skewSec)
+                obj.nNonFinite      = obj.nNonFinite + 1;
+                obj.consecNonFinite = obj.consecNonFinite + 1;
+                if obj.consecNonFinite > obj.maxConsecNonFinite
+                    obj.maxConsecNonFinite = obj.consecNonFinite;
+                end
+                if obj.consecNonFinite >= obj.nonFiniteAbortRun
+                    obj.tripped       = true;
+                    obj.trippedAtSkew = NaN;
+                    isTripped         = true;
+                    fprintf(['CLOCK FAULT: the input time base has not produced a finite skew ' ...
+                             'reading for %d consecutive frames (RZ2 clock map likely never ' ...
+                             'anchored -- see RZ2ClockMap.m). Every trigTime this session would be ' ...
+                             'NaN and every window built on it invalid. Session stopped.\n'], ...
+                            obj.consecNonFinite);
+                end
+                return;
+            end
+            obj.consecNonFinite = 0;
             obj.nUpdates = obj.nUpdates + 1;
             a = abs(skewSec);
             if a > obj.maxSkewSec
@@ -148,7 +194,9 @@ classdef ClockSkewMonitor < handle
                 'nUpdates',      obj.nUpdates, ...
                 'nOverWarn',     obj.nOverWarn, ...
                 'tripped',       obj.tripped, ...
-                'trippedAtSkew', obj.trippedAtSkew);
+                'trippedAtSkew', obj.trippedAtSkew, ...
+                'nNonFinite',         obj.nNonFinite, ...
+                'maxConsecNonFinite', obj.maxConsecNonFinite);
         end
     end
 end

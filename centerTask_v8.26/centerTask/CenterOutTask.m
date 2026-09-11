@@ -248,7 +248,8 @@ holdTime_min    = holdTime_base - holdTime_delta;
 holdTime_max    = holdTime_base + holdTime_delta;
 
 barDuration       = OrgGet(orgParams, 'barDuration', 1.0);   % minimum bar-visible time before the cue
-barStaysVisible   = 0;   % 0 = bar hides after barDuration, 1 = stays during selection
+barStaysVisible   = 0;   % [NOT WIRED] hardcoded -- see ConfigOrgParams.m orgParams.barStaysVisible.
+                          % 0 = bar hides after barDuration, 1 = stays during selection.
 barTotalDuration  = 1.0; % total bar-visible time (only if barStaysVisible = 1)
 
 % Working-memory delays. Both default to 0 (= no delay, as on the rig
@@ -1917,16 +1918,20 @@ while exitFlag == 0
             % el sujeto puede tocar varios foils antes de acertar.
             inFoilNow = any(inTarget) && ~inTarget(correctTarget);
             if forgiveFoils && inFoilNow && ~wasInFoil && withinWindow
-                % Cada ENTRADA nueva a un foil (por flanco) cuenta como un error
-                % de target equivocado. El ensayo NO se aborta: el mismo estimulo
-                % se queda y el sujeto sigue hasta el target correcto (o hasta que
-                % expire targetDuration). Como el estimulo no cambia, cada
-                % reentrada al foil vuelve a contar aqui como otro error.
+                % Cada ENTRADA nueva a un foil (por flanco) cuenta SOLO como un
+                % tanteo diagnostico (foilTouches/foilTouches_grp). El ensayo NO
+                % se aborta: el mismo estimulo se queda y el sujeto sigue hasta
+                % el target correcto (o hasta que expire targetDuration). NO se
+                % incrementan error_wrong_target/error_wrong_grp aqui: esos
+                % contadores son "errores que terminan el ensayo" (ver
+                % EP.ERROR_FB, error_type==2, alcanzado solo cuando
+                % forgiveFoils esta apagado) y se usan para el % de error de
+                % SessionReport -- sumar aqui tambien los dejaba superar
+                % total_trials en sesiones indulgentes con varios toques de
+                % foil por ensayo.
                 foilTouches = foilTouches + 1;
-                error_wrong_target = error_wrong_target + 1;
                 if current_trial_color >= 1
                     foilTouches_grp(current_trial_color) = foilTouches_grp(current_trial_color) + 1;
-                    error_wrong_grp(current_trial_color) = error_wrong_grp(current_trial_color) + 1;
                 end
                 % Flash SOLO si el checkbox "Show error flash" esta activado. Se
                 % re-arma en cada entrada (por eso "se reinicia"): un flash
@@ -2658,12 +2663,16 @@ try
     % written now, so trajectory maps of the hold/cue/decision period exist
     % alongside the movement-only cut below. The two are independent peers
     % sharing the same runTag `d`; neither calls the other.
-    SaveTrajectory(trajBuf, trajN, outDir, d, sessionDate, true, true);
+    % 9 = trajBuf's own preallocated width ("trajBuf = zeros(trajChunk, 9)"
+    % above), not derived from trajBuf itself -- see expectedRawCols in
+    % SaveTrajectory.m/SaveMovementTrajectory.m for why that distinction
+    % is the whole point of passing it.
+    SaveTrajectory(trajBuf, trajN, outDir, d, sessionDate, true, true, 9);
     % Filtered movement cut: DECISION_TIME + MOVEMENT + TARGET_HOLD only
     % (movementExportEpochs). A separate, smaller file for movement analysis,
     % alongside the full export above. Per-trial kinematics are not computed,
     % but this trajectory file is still written.
-    SaveMovementTrajectory(trajBuf, trajN, outDir, d, sessionDate, movementExportEpochs);
+    SaveMovementTrajectory(trajBuf, trajN, outDir, d, sessionDate, movementExportEpochs, true, true, 9);
     % Final flush: foil entries from a last trial that ended (stop key / operator
     % abort) before its BOOKKEEP ran are written here so none are lost.
     if forgiveFoils && nFoilPending > 0
@@ -2782,10 +2791,10 @@ catch ME
             % acceptable here.
             % Full multi-epoch export always salvaged; the movement-only cut
             % additionally when the epoch table survived the crash.
-            SaveTrajectory(trajBuf, trajN, outDir, d, dateForLog, true, true);
+            SaveTrajectory(trajBuf, trajN, outDir, d, dateForLog, true, true, 9);
             fprintf('Full trajectory salvaged after crash: %d samples in buffer\n', trajN);
             if exist('EP', 'var') && exist('movementExportEpochs', 'var')
-                SaveMovementTrajectory(trajBuf, trajN, outDir, d, dateForLog, movementExportEpochs);
+                SaveMovementTrajectory(trajBuf, trajN, outDir, d, dateForLog, movementExportEpochs, true, true, 9);
                 fprintf('Movement cut salvaged after crash: %d samples in buffer\n', trajN);
             end
         catch

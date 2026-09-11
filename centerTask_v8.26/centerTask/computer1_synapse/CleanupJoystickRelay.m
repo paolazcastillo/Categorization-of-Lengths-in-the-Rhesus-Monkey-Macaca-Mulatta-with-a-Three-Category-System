@@ -10,7 +10,12 @@ try
         fclose(state.udpObj);
     end
     delete(state.udpObj);
-catch
+catch ME
+    % A failure here can leave the relay socket/port bound, which then makes
+    % the NEXT InitJoystickRelay.m fail to open it -- silently swallowing
+    % this made that failure undiagnosable (see InitJoystickRelay.m).
+    fprintf('WARNING: joystick relay socket cleanup failed: %s (%s). Port may still be bound.\n', ...
+        ME.message, ME.identifier);
 end
 fprintf('Joystick relay stopped.\n');
 end

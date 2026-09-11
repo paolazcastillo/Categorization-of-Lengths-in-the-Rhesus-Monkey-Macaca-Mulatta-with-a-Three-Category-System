@@ -101,6 +101,14 @@ try
     % --- UDP link to the task computer --------------------------------------
     uTask = udp(remoteHost, 'RemotePort', 8830, 'LocalHost', localHost, 'LocalPort', 8830);
     uTask.OutputBufferSize = 100;
+    % Explicit InputBufferSize (2026-09-10): this was left at the toolbox
+    % default, which is small. The main loop below can block for up to ~1s
+    % per reward pulse (WaitSecs/pause), and several small messages -- a
+    % new-trial struct, an rz2RelayEnable toggle, a reward -- can legitimately
+    % queue up in that window; an undersized buffer risks silently dropping
+    % whichever ones don't fit. 65536 bytes is comfortably more than a
+    % session could queue between reads even under sustained backlog.
+    uTask.InputBufferSize = 65536;
     uTask.Timeout = 1;
     uTask.DatagramTerminateMode = 'on';
     fopen(uTask);
@@ -175,18 +183,24 @@ try
             bVisIndexPrev = bVisIndex;
         end
 
-        % --- Read a message from the task computer, if any -----------------
+        % --- Read ALL messages from the task computer, if any ---------------
+        % Drains the whole input queue instead of reading one packet and
+        % discarding the rest: with this loop able to block for up to ~1s per
+        % reward pulse below (WaitSecs/pause), a new-trial struct, an
+        % rz2RelayEnable toggle and a reward message can legitimately queue up
+        % in that window. The previous version read exactly one packet and
+        % then called flushinput() -- which was meant to "wash out stale
+        % messages" but, applied every iteration, actually discarded any
+        % OTHER real messages that had queued up behind the one just read,
+        % including rz2RelayEnable toggles and new-trial notifications. There
+        % is no flushinput() call needed here any more: draining the queue in
+        % this loop already empties it.
         tRUDP = tic; % DIAGNOSTIC
-        tmpStr = readUDP(uTask);
-        diag.sumReadUDP = diag.sumReadUDP + toc(tRUDP); % DIAGNOSTIC
-        if ~isempty(tmpStr)
-            % flushUDP() is not a MATLAB/Instrument Control Toolbox function
-            % and was never defined anywhere in this codebase -- it crashed
-            % on the very first UDP message received (reward or trial-info
-            % alike), aborting straight to the catch block before eval(tmpStr)
-            % could ever run. flushinput() is the real function; it's already
-            % used for the same purpose above (line ~65). Confirmed 2026-07-10.
-            flushinput(uTask)
+        while uTask.BytesAvailable > 0
+            tmpStr = readUDP(uTask);
+            if isempty(tmpStr)
+                break;   % nothing more decodable this iteration
+            end
             if isstruct(tmpStr)
                 % New-trial struct: initialTimeTrialReal, dimension, curr_block, actualTrial
                 trialInfo = tmpStr;
@@ -198,6 +212,7 @@ try
                 pause
             end
         end
+        diag.sumReadUDP = diag.sumReadUDP + toc(tRUDP); % DIAGNOSTIC
 
         % --- Start/stop the RZ2 joystick relay to match Computer 2's
         % current Input source selection (rz2RelayEnable, set above via
