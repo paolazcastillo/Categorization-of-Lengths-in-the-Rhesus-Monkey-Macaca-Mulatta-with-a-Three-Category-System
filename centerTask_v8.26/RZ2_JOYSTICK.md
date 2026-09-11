@@ -108,10 +108,13 @@ the start of a session, or pinning it in the circuit.
 
 Since 2026-09-04 this no longer silently bends every timestamp: Computer 2
 estimates the rate from the data (`RZ2ClockMap.m`) and `rz2SampleRateHz` is only
-the seed and the centre of a +-10% clamp. A `downsample` reset lands far outside
-that clamp, so `ClockSkewMonitor.m` stops the session within a frame or two
-instead of letting it run. Confirming the parameter is still worth doing; it is
-just no longer the difference between good data and a wasted session.
+the seed and the centre of a +-1% clamp (`rz2ClockMaxRateDev`, wired in
+`SetupRZ2Joystick.m` / `ConfigOrgParams.m`; the 0.10 next to it in
+`RZ2ClockMap.m` is only an illustrative docstring example, not the runtime
+value). A `downsample` reset lands far outside that clamp, so
+`ClockSkewMonitor.m` stops the session within a frame or two instead of letting
+it run. Confirming the parameter is still worth doing; it is just no longer the
+difference between good data and a wasted session.
 
 **`WRITE_FS` on Computer 1 is still 1017. ACTIVE, not just worth knowing.**
 `InitJoystickRelay.m` sets `state.WRITE_FS = 1017`, from before the rate was ever
@@ -142,16 +145,6 @@ diagnostic.
 Sequencing: do this AFTER one session with the Computer 2 fix, and use the rate
 that session's `RZ2 clock:` line reports. Then the change is "the number the link
 measured this week", not "the number inferred from two CSVs".
-
-**The write-index fallback does not actually work as its comment claims.**
-`InitJoystickRelay.m` documents that the reader "degrades to legacy pacing
-automatically" when a tag cannot be read. That is false on this rig:
-SynapseAPI's `getParameterValue` does not throw for a nonexistent tag, so
-`idxOk` never goes false, `widxFellBack` never fires, and the relay silently
-anchors to a bogus value and reads 0 new samples forever, with no warning. If
-`WRITE_IDX_TAG_X/Y` is ever repointed, add an explicit existence check (via
-`getParameterInfo`) in `readWriteIndex()` inside `StepJoystickRelay.m` rather
-than relying on a caught exception.
 
 ## Debugging chronology
 
@@ -391,3 +384,33 @@ Sessions to treat as invalid: `sessROM_31-Aug-2026_14-20` and `sessPX-309`. The
 decision times are recoverable (add the fitted divergence), but from the point
 the effective hold reaches zero the protocol is no longer the configured one, so
 those trials are not comparable with anything.
+
+### 2026-09-11 -- the write-index fallback's safety net didn't exist
+
+`InitJoystickRelay.m`'s own comment already called this out as false ("degrades
+to legacy pacing automatically... confirmed FALSE on this rig"), but nothing
+enforced it: SynapseAPI's `getParameterValue`/`getParameterValues` do not throw
+for a nonexistent tag, so `idxOk` in `StepJoystickRelay.m` could never become
+false from a bad tag name, `widxFellBack` could never fire, and a
+`WRITE_IDX_TAG_X/Y` repointed to something wrong would have anchored the relay
+to a bogus value and read 0 new samples forever -- silently.
+
+Not live on this rig today: `WRITE_IDX_TAG_X/Y` are `'???'`, confirmed readable
+since 2026-08-25. This was closing a landmine for the next repointing, not
+fixing a running bug.
+
+`getParameterInfo` was the fix this document originally proposed. It is not a
+reliable existence check: `VerifyWidxWidy.m` already found it can fail on tags
+that DO exist, which is why it is treated there as non-fatal diagnostic output,
+not a test. `getParameterNames` + membership is what `ProbeJoystickBuffers.m`
+and `VerifyWidxWidy.m` actually use to confirm a tag is real, so that is what
+`InitJoystickRelay.m` now checks too -- once, at startup, right after
+`WRITE_IDX_TAG_X/Y` are set. Either tag missing disables write-index mode for
+the session (both fields reset to `''`) with a warning naming which tag and
+which gizmo, falling back to the legacy diff-peak/time-paced path exactly as
+the empty-string convention already meant.
+
+Deliberately not a per-cycle check inside `readWriteIndex()` as first proposed:
+that would add a `getParameterNames` round-trip to a loop already profiled
+closely enough to have its own cycle-cost log (`StepJoystickRelay.m`), to catch
+a failure mode -- a tag vanishing mid-session -- this rig has never shown.

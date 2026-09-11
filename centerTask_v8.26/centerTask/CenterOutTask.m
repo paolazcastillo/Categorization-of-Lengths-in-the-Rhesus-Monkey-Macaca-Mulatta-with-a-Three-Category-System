@@ -1562,13 +1562,17 @@ while exitFlag == 0
                 trajN = trajN + 1;
                 bx = xCenter + screenXpixels * rz2Batch(bi, 2) * rz2.scaleX;
                 by = yCenter + rz2.offsetY + screenYpixels * rz2Batch(bi, 3) * rz2.scaleY;
-                % max(...,0): rz2Batch(bi,1) is interpolated from
-                % rz2.port.UserData.lastDrainTime (stamped when
-                % SetupRZ2Joystick.m opened the socket, BEFORE sessionT0
-                % exists), so the very first batch of the very first frame
-                % can legitimately compute a time just before sessionT0;
-                % clamp those rows to exactly 0 rather than letting the
-                % trajectory's first few rz2adc samples read negative.
+                % max(...,0): rz2Batch(bi,1) being interpolated from
+                % rz2.port.UserData.lastDrainTime is true only for legacy,
+                % index-less samples; indexed samples (the normal case) get
+                % their time from RZ2ClockMap instead (see ReadRZ2Joystick.m).
+                % Both are GetSecs-based, and the relay starts streaming on
+                % Computer 1 before Computer 2 stamps sessionT0 either way, so
+                % under both paths the very first batch of the very first
+                % frame can legitimately compute a time just before
+                % sessionT0; clamp those rows to exactly 0 rather than
+                % letting the trajectory's first few rz2adc samples read
+                % negative.
                 rz2TimeMs = max((rz2Batch(bi, 1) - sessionT0) * 1000, 0);
                 trajBuf(trajN, :) = [total_trials, rz2TimeMs, bx, by, nextEpoch.Value, trajBlockNum, trajTrialNumInBlock, stimAttempt, rz2Batch(bi, 4)];
             end

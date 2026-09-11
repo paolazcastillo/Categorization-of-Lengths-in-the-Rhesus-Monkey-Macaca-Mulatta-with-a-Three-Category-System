@@ -302,15 +302,21 @@ state.tHeadRef    = tic;
 % Enabled: X reads its head from tag 'widx' on APICh1X, Y from 'widy' on
 % APICh2Y. If you exposed a SINGLE tag name on both gizmos, set both fields to
 % that same name. Set either to '' to force the legacy diff-peak/time-paced
-% path. Safety net that does NOT actually work as described: the comment
-% above promises the reader "degrades to legacy pacing automatically (NOT a
-% freeze) on any cycle a tag cannot be read" -- confirmed FALSE on this rig.
-% SynapseAPI's getParameterValue/getParameterValues does not throw for a
-% nonexistent tag, so idxOk never becomes false, widxFellBack never fires,
-% and the relay silently anchors to a bogus value and reads 0 new samples
-% forever (Samples=0/Dgrams=0, no warning). If you re-enable this, add an
-% explicit existence check (e.g. via getParameterInfo) in readWriteIndex()
-% inside StepJoystickRelay.m instead of relying on a caught exception.
+% path. Safety net: the comment above promises the reader "degrades to legacy
+% pacing automatically (NOT a freeze) on any cycle a tag cannot be read", but
+% that is NOT true of getParameterValue/getParameterValues by themselves --
+% neither throws for a nonexistent tag, so idxOk in StepJoystickRelay.m would
+% never become false, widxFellBack would never fire, and the relay would
+% silently anchor to a bogus value and read 0 new samples forever
+% (Samples=0/Dgrams=0, no warning). VERIFIED 2026-09-11: closed below instead,
+% ONCE at startup rather than per cycle inside readWriteIndex() -- that keeps
+% the check off the profiled hot path (see StepJoystickRelay.m's cycle-cost
+% log) at the cost of not catching a tag that vanishes mid-session, which is
+% not a failure mode this rig has ever shown. getParameterNames is what
+% actually proves a tag exists here (the same check ProbeJoystickBuffers.m
+% and VerifyWidxWidy.m use); getParameterInfo was the original plan but
+% VerifyWidxWidy.m found it can fail on tags that DO exist, so it is treated
+% there as non-fatal diagnostic output, not an existence test.
 %
 % DISABLED (2026-08-20): 'widx'/'widy' are not yet wired in
 % APIStreamer1Ch.rcx -- the ID_widx gizmoControl was added to the circuit
@@ -342,6 +348,31 @@ state.tHeadRef    = tic;
 % the tag ever becomes unreadable) and are left at their measured values.
 state.WRITE_IDX_TAG_X = '???';
 state.WRITE_IDX_TAG_Y = '???';
+
+% Existence check promised above: confirm both tags are real BEFORE letting
+% write-index mode engage at all, so a future repointing to a wrong name
+% falls back to legacy pacing (loud) instead of the silent freeze this
+% section used to be able to produce.
+namesX = syn.getParameterNames('APICh1X');
+namesY = syn.getParameterNames('APICh2Y');
+tagXOk = any(strcmpi(namesX, state.WRITE_IDX_TAG_X));
+tagYOk = any(strcmpi(namesY, state.WRITE_IDX_TAG_Y));
+if ~tagXOk || ~tagYOk
+    missing = {};
+    if ~tagXOk
+        missing{end + 1} = sprintf('WRITE_IDX_TAG_X (''%s'' on APICh1X)', state.WRITE_IDX_TAG_X);
+    end
+    if ~tagYOk
+        missing{end + 1} = sprintf('WRITE_IDX_TAG_Y (''%s'' on APICh2Y)', state.WRITE_IDX_TAG_Y);
+    end
+    warning(['Joystick relay: %s not found in Synapse''s parameter list -- ' ...
+        'write-index mode disabled for this session; falling back to legacy ' ...
+        'diff-peak/time-paced pacing instead. Run ProbeJoystickBuffers() to ' ...
+        'confirm the tag before re-enabling.'], strjoin(missing, ' and '));
+    state.WRITE_IDX_TAG_X = '';
+    state.WRITE_IDX_TAG_Y = '';
+end
+
 state.widxInited      = false;   % true once curIdx is anchored to the live head
 state.widxNew         = 0;       % samples waiting per cycle (relay-side backlog), for the log
 state.widxFellBack    = false;   % warn-once flag if a tag read fails and we use legacy pacing
