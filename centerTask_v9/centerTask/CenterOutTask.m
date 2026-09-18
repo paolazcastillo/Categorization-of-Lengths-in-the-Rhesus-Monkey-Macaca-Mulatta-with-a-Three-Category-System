@@ -699,6 +699,15 @@ numBlocksUsed  = 0;
 % them instead. A row here joins to its trajectory rows on
 % Block + TrialNumInBlock + Attempt -- the same key SaveMovementTrajectory.m's
 % own header comment uses.
+%
+% ONE exception: TakeoffTime_s (target-onset -> movement takeoff at 5 % of
+% peak speed). It is the only trajectory-derived value written here, because
+% it is a TIME and belongs next to the other three; TrialTakeoff.m computes
+% it in BOOKKEEP with a 1:1 port of the EDA notebooks' pipeline, so the
+% column matches what build_trial_features derives offline from
+% trajectory_movement_*.csv. It sits right AFTER TotalTime_s so the three
+% older timing columns keep their positions; everything downstream reads
+% this file by header name.
 colorNames_log     = ColorCategoryMap.categoryCSVNames();
 directionNames_log = {'Right_0', 'Up_90', 'Left_180', 'Down_270'};
 trialLogFile      = fullfile(outDir, ['trial_data_' d '.csv']);
@@ -712,11 +721,20 @@ fid_log = fopen(trialLogFile, 'w');
 % this per-attempt CSV (not the printed console report) records both side
 % by side, so a retry's actual vs. planned position is fully auditable here.
 fprintf(fid_log, ['Date,Block,TrialNumInBlock,StimulusGroup,BarSizeVA_deg,DecisionTime_s,' ...
-                'ExecutionTime_s,TotalTime_s,IsCorrect,ErrorType,DirectionChosen,DirectionCorrect,' ...
+                'ExecutionTime_s,TotalTime_s,TakeoffTime_s,IsCorrect,ErrorType,DirectionChosen,DirectionCorrect,' ...
                 'PlannedDirection,ChosenTarget,PrevTrialCorrect,PrevTrialDirection,Attempt,' ...
                 'NumCategories,SessionMode\n']);
 fclose(fid_log);
 fprintf('Trial log file created:      %s\n', trialLogFile);
+
+% Warm up TrialTakeoff.m on a synthetic reach so MATLAB's first-call
+% compile cost (a few hundred ms) is paid here in SETUP instead of in the
+% first trial's BOOKKEEP. The result is discarded.
+tkWarm = (0:299)';
+TrialTakeoff([tkWarm * 8, 960 + tkWarm, 540 + 0 * tkWarm, ...
+    [repmat(EP.DECISION_TIME.Value, 100, 1); repmat(EP.MOVEMENT.Value, 200, 1)], tkWarm], ...
+    0.8, EP.MOVEMENT.Value, false);
+clear tkWarm
 
 % --- Per-foil-entry log (pre-training foil-forgiving only) ----------------
 % One row PER FOIL ENTRY (not per trial): every time the subject enters a
@@ -2381,6 +2399,21 @@ while exitFlag == 0
                 if ~isnan(decisionTime) && ~isnan(executionTime)
                     totalTime = decisionTime + executionTime;   % total stimulus-to-completion time
                 end
+                % Movement takeoff (5 % of peak speed), same definition as the
+                % EDA notebooks' TakeoffTime_s; see TrialTakeoff.m. This
+                % attempt's rows are the tail of trajBuf stamped with its
+                % total_trials (column 1), cut to the epochs the movement
+                % export keeps -- the rows the notebook processes for it.
+                % Runs here in BOOKKEEP, after the ITI, never inside the
+                % real-time tracking path. NaN when there was no reach.
+                takeoffTime = NaN;
+                if ~isnan(decisionTime) && trajN > 0
+                    tkFirst = find(trajBuf(1:trajN, 1) ~= total_trials, 1, 'last');
+                    if isempty(tkFirst), tkFirst = 0; end
+                    tkRows = trajBuf(tkFirst + 1:trajN, [2 3 4 5 9]);
+                    tkRows = tkRows(ismember(tkRows(:, 4), movementExportEpochs), :);
+                    takeoffTime = TrialTakeoff(tkRows, decisionTime, EP.MOVEMENT.Value, useRZ2);
+                end
                 barVA_log = target_angles(trialBarIndices(trial_sequence_index));
                 if chosen_target_direction >= 1
                     dirChosenStr = directionNames_log{chosen_target_direction};
@@ -2401,6 +2434,9 @@ while exitFlag == 0
                 %   ExecutionTime_s = executionTime (leave-center -> reach-target)
                 %   TotalTime_s     = totalTime     (decision + execution, i.e.
                 %                     target-onset -> reach-target)
+                %   TakeoffTime_s   = takeoffTime   (target-onset -> movement
+                %                     takeoff at 5 % of peak speed; <= DecisionTime_s
+                %                     by the takeoff lead; see TrialTakeoff.m)
                 % NOTE for the analysis side: ExecutionTime_s is filled in as
                 % soon as a target is entered, so a row with ErrorType == 1 and
                 % a non-NaN ExecutionTime_s is a lenient hold failure on the
@@ -2417,9 +2453,9 @@ while exitFlag == 0
                 % lengthCategory), so without these two columns a pooled
                 % analysis cannot tell which regime produced a given row.
                 fid_log = fopen(trialLogFile, 'a');
-                fprintf(fid_log, '%s,%d,%d,%s,%.2f,%.4f,%.4f,%.4f,%d,%d,%s,%s,%s,%d,%d,%s,%d,%d,%s\n', ...
+                fprintf(fid_log, '%s,%d,%d,%s,%.2f,%.4f,%.4f,%.4f,%.4f,%d,%d,%s,%s,%s,%d,%d,%s,%d,%d,%s\n', ...
                     sessionDate, blockNum, trialNumInBlock, colorNames_log{current_trial_color}, ...
-                    barVA_log, decisionTime, executionTime, totalTime, good_trial, error_type, ...
+                    barVA_log, decisionTime, executionTime, totalTime, takeoffTime, good_trial, error_type, ...
                     dirChosenStr, directionNames_log{current_trial_direction}, plannedDirForLog, chosen_target_color, ...
                     prevTrialCorrect, prevTrialDirection, stimAttempt, blkNc, sessionMode);
                 fclose(fid_log);

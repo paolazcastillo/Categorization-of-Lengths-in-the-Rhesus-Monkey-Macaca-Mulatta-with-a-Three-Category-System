@@ -191,6 +191,7 @@ classdef SessionReport
         fprintf('  DecisionTime_s  = target-onset  -> leave-center\n');
         fprintf('  ExecutionTime_s = leave-center  -> reach-target\n');
         fprintf('  TotalTime_s     = DecisionTime + ExecutionTime  (target-onset -> reach-target)\n');
+        fprintf('  TakeoffTime_s   = target-onset  -> movement takeoff (5%% of peak speed; TrialTakeoff.m)\n');
         fprintf('  The matrices below report the mean DECISION time.\n');
         fprintf('\n--- Performance Matrix --- %s\n\n', matrixRowsLabel);
         fprintf('Mean Decision Time (s) [target-onset -> leave-center]:\n%s\n', dirHeader);
