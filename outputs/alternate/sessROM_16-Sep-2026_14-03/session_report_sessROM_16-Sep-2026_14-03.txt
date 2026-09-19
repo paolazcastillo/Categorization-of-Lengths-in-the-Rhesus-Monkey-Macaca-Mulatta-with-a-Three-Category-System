@@ -1,0 +1,253 @@
+===========================================================
+SESSION LOG -- CenterOutTask
+Run tag : sessROM_16-Sep-2026_14-03
+Started : 16-Sep-2026 14:03:43
+Full console transcript for this run, including the end-of-session report.
+===========================================================
+Trial log file created:      outputs/2026-09/2026-09-16/sessROM_16-Sep-2026_14-03/trial_data_sessROM_16-Sep-2026_14-03.csv
+
+======= SESSION BUDGET =======
+Stop condition : 12 presentation(s) per (bar length x position) combination
+                 errors consume their slot -- this session is exactly 576 trials
+Bar lengths    : 12 (4.00-7.80 deg VA)   Positions: 4
+Per block      : 48 trials = every length x 4 positions, i.e. 1 shot per combination
+Blocks         : 12 (error-free); retries and requeues add trials, not combinations
+Retries        : OFF (one attempt per stimulus)
+Requeue        : OFF (every trial credited where it stands)
+                 -> this session runs exactly 576 trials, no repeats of any kind
+Correct trials needed, per category:
+  Short :  4 length(s) x 4 positions x 12 =  192
+  Mid   :  4 length(s) x 4 positions x 12 =  192
+  Long  :  4 length(s) x 4 positions x 12 =  192
+  TOTAL :                                  576
+Remaining now  : 576 of 576 (whole session)
+Category mix   : 288 x 2-cat + 288 x 3-cat scheduled (sessionMode = alternate)
+==============================
+
+
+
+PTB-INFO: This is Psychtoolbox-3 for GNU/Linux X11, under Matlab 64-Bit (Version 3.0.15 - Build date: Jul 17 2019).
+PTB-INFO: Support status on this operating system release: Linux 4.15.0-142-generic Supported.
+PTB-INFO: Type 'PsychtoolboxVersion' for more detailed version information.
+PTB-INFO: Most parts of the Psychtoolbox distribution are licensed to you under terms of the MIT License, with
+PTB-INFO: some restrictions. See file 'License.txt' in the Psychtoolbox root folder for the exact licensing conditions.
+
+PTB-INFO: NVIDIA Corporation - GF119 [NVS 310] GPU found. Trying to establish low-level access...
+PTB-INFO: Connected to NVidia GF119 [NVS 310] GPU of NV-0d0 family with 2 display heads.
+
+
+PTB-INFO: OpenGL-Renderer is NVIDIA Corporation :: NVS 310/PCIe/SSE2 :: 4.4.0 NVIDIA 340.107
+PTB-INFO: VBL startline = 1080 , VBL Endline = 1124
+PTB-INFO: Measured monitor refresh interval from beamposition = 16.666140 ms [60.001897 Hz].
+PTB-INFO: Will use beamposition query for accurate Flip time stamping.
+PTB-INFO: Measured monitor refresh interval from VBLsync = 16.666121 ms [60.001963 Hz]. (50 valid samples taken, stddev=0.002503 ms.)
+PTB-INFO: Reported monitor refresh interval from operating system = 16.666667 ms [60.000000 Hz].
+PTB-INFO: Small deviations between reported values are normal and no reason to worry.
+
+
+WARNING: This session of your experiment was run by you with the setting Screen('Preference', 'SkipSyncTests', 1).
+WARNING: This means that some internal self-tests and calibrations were skipped. Your stimulus presentation timing
+WARNING: may have been wrong. This is fine for development and debugging of your experiment, but for running the real
+WARNING: study, please make sure to set Screen('Preference', 'SkipSyncTests', 0) for maximum accuracy and reliability.
+
+Session data saved to:  outputs/2026-09/2026-09-16/sessROM_16-Sep-2026_14-03/perf_sessROM_16-Sep-2026_14-03.mat
+CSV exported to:        outputs/2026-09/2026-09-16/sessROM_16-Sep-2026_14-03/session_data_sessROM_16-Sep-2026_14-03.csv
+Trajectory saved to: outputs/2026-09/2026-09-16/sessROM_16-Sep-2026_14-03/trajectory_sessROM_16-Sep-2026_14-03.mat (163585 samples)
+Trajectory CSV exported to: outputs/2026-09/2026-09-16/sessROM_16-Sep-2026_14-03/trajectory_sessROM_16-Sep-2026_14-03.csv (163585 samples)
+Movement-only trajectory saved to: outputs/2026-09/2026-09-16/sessROM_16-Sep-2026_14-03/trajectory_movement_sessROM_16-Sep-2026_14-03.mat (33774 samples)
+Movement-only trajectory exported to: outputs/2026-09/2026-09-16/sessROM_16-Sep-2026_14-03/trajectory_movement_sessROM_16-Sep-2026_14-03.csv (33774 samples)
+
+======= PER-BLOCK SUMMARY (Level 1) =======
+Block  Mix(2/3)   Total   Good    %Corr  EarlyEx  WrongTg  HoldBrk   By category (good/total)
+1      48/0          48     37    77.1%        1       10        0   Short 14/24  Mid 0/0  Long 23/24  
+2       0/48         48     33    68.8%        5       10        0   Short 11/16  Mid 12/16  Long 10/16  
+3      48/0          48     34    70.8%        2       12        0   Short 16/24  Mid 0/0  Long 18/24  
+4       0/48         48     39    81.2%        1        8        0   Short 13/16  Mid 12/16  Long 14/16  
+5      48/0          48     39    81.2%        0        9        0   Short 16/24  Mid 0/0  Long 23/24  
+6       0/22         22     19    86.4%        0        3        0   Short 7/8  Mid 8/8  Long 4/6  
+============================================
+
+======= SESSION SUMMARY (Level 2 -- all blocks combined) ==========
+Total Trials:        263
+Good Trials:         201
+Overall Performance: 76.43%
+
+--- Error Breakdown (ErrorType in trial_data_*.csv) ---
+1 Early exit / timeout:     9 (  3.42%)  never reached the correct target
+2 Wrong target:            52 ( 19.77%)  entered a target of another category
+3 Hold-break:               0 (  0.00%)  reached the CORRECT target, released
+                                         before completing the hold (pre-training only)
+
+--- Category Selection Performance ---
+Trials that resolved as a category choice: 253
+Category selection accuracy: 79.45%
+=============================================
+
+--- SHORT GROUP trials: 112 total, 77 correct (68.8%)
+--- MID   GROUP trials: 40 total, 32 correct (80.0%)
+--- LONG  GROUP trials: 111 total, 92 correct (82.9%)
+
+--- Per (length x position) quota (min 12 correct each) ---
+                       R   U   L   D
+   1. 4.0000 deg VA:   5   4   6   6  <-- short
+   2. 4.1000 deg VA:   4   5   6   6  <-- short
+   3. 4.7000 deg VA:   5   3   5   5  <-- short
+   4. 5.0000 deg VA:   2   4   4   2  <-- short
+   5. 5.1000 deg VA:   2   3   2   3  <-- short
+   6. 5.7000 deg VA:   2   3   3   2  <-- short
+   7. 6.0000 deg VA:   4   6   4   5  <-- short
+   8. 6.1000 deg VA:   5   5   4   3  <-- short
+   9. 6.7000 deg VA:   4   5   4   4  <-- short
+  10. 7.0000 deg VA:   4   5   4   6  <-- short
+  11. 7.6000 deg VA:   4   6   4   5  <-- short
+  12. 7.8000 deg VA:   4   4   5   5  <-- short
+
+--- Same, split by category-count (2-cat / 3-cat) --- (2cat + 3cat = total above)
+                       2-cat                3-cat          
+                         R   U   L   D        R   U   L   D
+   1. 4.0000 deg VA:     3   2   3   3        2   2   3   3
+   2. 4.1000 deg VA:     3   3   3   3        1   2   3   3
+   3. 4.7000 deg VA:     3   2   3   2        2   1   2   3
+   4. 5.0000 deg VA:     1   3   3   1        1   1   1   1
+   5. 5.1000 deg VA:     0   2   0   0        2   1   2   3
+   6. 5.7000 deg VA:     0   2   0   1        2   1   3   1
+   7. 6.0000 deg VA:     1   3   2   3        3   3   2   2
+   8. 6.1000 deg VA:     2   3   3   2        3   2   1   1
+   9. 6.7000 deg VA:     2   3   3   3        2   2   1   1
+  10. 7.0000 deg VA:     3   2   3   3        1   3   1   3
+  11. 7.6000 deg VA:     3   3   2   3        1   3   2   2
+  12. 7.8000 deg VA:     3   3   3   3        1   1   2   2
+
+--- Timing definitions (as written to trial_data_*.csv) ---
+  DecisionTime_s  = target-onset  -> leave-center
+  ExecutionTime_s = leave-center  -> reach-target
+  TotalTime_s     = DecisionTime + ExecutionTime  (target-onset -> reach-target)
+  The matrices below report the mean DECISION time.
+
+--- Performance Matrix --- (rows 1=Short 2=Mid 3=Long | cols Right Up Left Down)
+
+Mean Decision Time (s) [target-onset -> leave-center]:
+             Right        Up      Left      Down
+Short:       0.396     0.365     0.283     0.318
+Mid:         0.309     0.322     0.376     0.325
+Long:        0.405     0.346     0.362     0.310
+
+Percentage Correct (%):
+             Right        Up      Left      Down
+Short:       57.14     83.33     80.77     66.67
+Mid:        100.00    100.00     80.00     70.00
+Long:        70.37     89.66     88.00     92.59
+
+Trial Counts:
+             Right        Up      Left      Down
+Short:          28        24        26        30
+Mid:            10         7        10        10
+Long:           27        29        25        27
+
+--- Same, per (bar length x position) --- the 48 combinations this session ran
+
+Mean Decision Time (s) [target-onset -> leave-center]:
+                           Right        Up      Left      Down
+   1. 4.0000 deg Short:    0.364     0.380     0.262     0.320
+   2. 4.1000 deg Short:    0.368     0.384     0.290     0.312
+   3. 4.7000 deg Short:    0.397     0.340     0.304     0.321
+   4. 5.0000 deg Short:    0.526     0.351     0.276     0.317
+   5. 5.1000 deg Mid  :    0.276     0.379     0.393     0.295
+   6. 5.7000 deg Mid  :    0.351     0.334     0.345     0.284
+   7. 6.0000 deg Mid  :    0.284     0.301     0.401     0.381
+   8. 6.1000 deg Mid  :    0.314     0.321     0.322     0.401
+   9. 6.7000 deg Long :    0.451     0.331     0.297     0.293
+  10. 7.0000 deg Long :    0.297     0.371     0.305     0.279
+  11. 7.6000 deg Long :    0.651     0.362     0.468     0.304
+  12. 7.8000 deg Long :    0.309     0.368     0.398     0.288
+
+Percentage Correct (%):
+                           Right        Up      Left      Down
+   1. 4.0000 deg Short:   100.00    100.00    100.00    100.00
+   2. 4.1000 deg Short:    80.00    100.00    100.00    100.00
+   3. 4.7000 deg Short:    83.33     75.00    100.00     83.33
+   4. 5.0000 deg Short:    33.33     80.00     80.00     33.33
+   5. 5.1000 deg Mid  :    40.00     75.00     40.00     50.00
+   6. 5.7000 deg Mid  :    40.00     75.00     60.00     40.00
+   7. 6.0000 deg Mid  :    66.67    100.00     66.67     83.33
+   8. 6.1000 deg Mid  :    83.33    100.00    100.00     60.00
+   9. 6.7000 deg Long :    80.00     83.33     80.00     80.00
+  10. 7.0000 deg Long :    66.67     83.33    100.00    100.00
+  11. 7.6000 deg Long :    80.00    100.00     80.00    100.00
+  12. 7.8000 deg Long :    80.00     80.00    100.00    100.00
+
+Trial Counts (correct / total):
+                           Right        Up      Left      Down
+   1. 4.0000 deg Short:      5/5       4/4       6/6       6/6
+   2. 4.1000 deg Short:      4/5       5/5       6/6       6/6
+   3. 4.7000 deg Short:      5/6       3/4       5/5       5/6
+   4. 5.0000 deg Short:      2/6       4/5       4/5       2/6
+   5. 5.1000 deg Mid  :      2/5       3/4       2/5       3/6
+   6. 5.7000 deg Mid  :      2/5       3/4       3/5       2/5
+   7. 6.0000 deg Mid  :      4/6       6/6       4/6       5/6
+   8. 6.1000 deg Mid  :      5/6       5/5       4/4       3/5
+   9. 6.7000 deg Long :      4/5       5/6       4/5       4/5
+  10. 7.0000 deg Long :      4/6       5/6       4/4       6/6
+  11. 7.6000 deg Long :      4/5       6/6       4/5       5/5
+  12. 7.8000 deg Long :      4/5       4/5       5/5       5/5
+
+
+======= REWARD DELIVERED =======
+Correct trials:             201 pulse(s)     40.200 s
+Manual (r key):               2 pulse(s)      0.200 s
+TOTAL valve-open time:      203 pulse(s)     40.400 s
+Estimated water:             29.90 mL   (calibration 0.740 mL/s)
+================================
+
+======= SESSION TIME =======
+Total          : 00:31:55  (1915.4 s, from the first hold to the end of the last trial)
+Per trial      : 7.3 s over 263 trial(s)
+
+======= CONFUSION MATRIX (true category x chosen category) =======
+                   Short       Mid      Long     Total    Recall
+True Short            77         8        23       108     71.3%
+True Mid               1        32         4        37     86.5%
+True Long              9         7        92       108     85.2%
+  Column total        87        47       119
+
+Overall accuracy (of trials that reached a selection): 79.4%  (201/253)
+====================================================================
+
+======= SIGNAL DETECTION (one-vs-rest per category) =======
+
+--- Signal = Short ---
+                     Resp YES    Resp NO    Total
+Stim Short                 77         31      108
+Stim other                 10        135      145
+             Total         87        166      253
+  Hit rate 0.711   FA rate 0.072   (log-linear corrected)
+  d' = 2.018   criterion = +0.453
+  Precision 0.885   Recall 0.713   F1 0.790
+
+--- Signal = Mid ---
+                     Resp YES    Resp NO    Total
+Stim Mid                   32          5       37
+Stim other                 15        201      216
+             Total         47        206      253
+  Hit rate 0.855   FA rate 0.071   (log-linear corrected)
+  d' = 2.525   criterion = +0.203
+  Precision 0.681   Recall 0.865   F1 0.762
+
+--- Signal = Long ---
+                     Resp YES    Resp NO    Total
+Stim Long                  92         16      108
+Stim other                 27        118      145
+             Total        119        134      253
+  Hit rate 0.849   FA rate 0.188   (log-linear corrected)
+  d' = 1.915   criterion = -0.073
+  Precision 0.773   Recall 0.852   F1 0.811
+
+--- Summary across categories ---
+  Category         d'    criterion
+     Short      2.018       +0.453
+       Mid      2.525       +0.203
+      Long      1.915       -0.073
+==========================================================
+
+Session report saved to: outputs/2026-09/2026-09-16/sessROM_16-Sep-2026_14-03/session_report_sessROM_16-Sep-2026_14-03.txt
+RZ2 link: DIAGNOSTIC -- CleanupRZ2Joystick called with rz2=double, so nothing to report.
