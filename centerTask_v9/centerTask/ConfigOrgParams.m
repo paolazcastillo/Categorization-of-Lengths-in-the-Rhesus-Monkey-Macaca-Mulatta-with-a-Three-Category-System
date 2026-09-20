@@ -235,14 +235,26 @@ classdef ConfigOrgParams
             orgParams.strictHold              = false;
             % Strict pre-training feedback (console "Training error flash").
             % Applies ONLY when trainingPhase > 0; the categorization task is
-            % untouched by it. true (default): reaching the foil is a
-            % wrong-target error WITH flash (which also disables foilNoAbort),
-            % and releasing the correct target before completing the hold is a
-            % hold-break error (ErrorType 3) WITH flash. false: the lenient
-            % pre-training behaviour -- the foil does not abort and leaving the
-            % target only restarts the hold timer. See strictTraining in
-            % CenterOutTask.m's SETUP and its EP.TARGET_HOLD.
+            % untouched by it. Governs ONLY the hold-break case now: true
+            % (default), releasing the correct target before completing the
+            % hold is a hold-break error (ErrorType 3) WITH flash; false, the
+            % lenient behaviour -- leaving the target only restarts the hold
+            % timer, no abort. See strictTraining in CenterOutTask.m's SETUP
+            % and its EP.TARGET_HOLD. Does NOT affect the foil/wrong-target
+            % case any more: as of 2026-09-15 that always flashes and always
+            % aborts (see forgiveFoils in SETUP, forced off), regardless of
+            % this flag or of foilNoAbort/showErrorFlash.
             orgParams.trainingErrorFlash      = true;
+            % Foil fade (training phases only, trainingPhase > 0; console
+            % "Foil fade toward black (%)", next to Training phase). 0-100:
+            % how far the INCORRECT target(s)' colour is blended toward
+            % black (the screen background), as a visual aid pointing the
+            % subject at the correct target. 0 = full colour (no aid), 100 =
+            % foil rendered pure black (invisible against the background).
+            % The correct target is never touched. See placeTargets() in
+            % CenterOutTask.m. Has no effect at all when Training phase is
+            % "0 - off" (the categorization task).
+            orgParams.trainingFoilFadePct     = 50;
             % true (default) = gray-until-holding cue: the centre hold-ring is
             % gray while waiting to enter/before the hold starts, green once it
             % begins. false = the ring is always green. See CenterInTask.m's
@@ -279,9 +291,9 @@ classdef ConfigOrgParams
             % (gain) are console-editable (CenterConsole.m's "RZ2 gain X/Y"
             % fields, Rig geometry column) since gain is a per-session tuning
             % knob, not fixed rig wiring; these two are just the fallback
-            % defaults used to pre-fill that GUI. rz2UdpPort/rz2OffsetY stay
-            % code-only -- true rig wiring an operator should not need to
-            % touch per session.
+            % defaults used to pre-fill that GUI. rz2UdpPort/rz2OffsetX/
+            % rz2OffsetY stay code-only -- true rig wiring an operator
+            % should not need to touch per session.
             %
             % Must match JoystickRelayToTask.m's UDP_PORT on Computer 1 (its
             % REMOTE_HOST must point at this machine's IP -- see
@@ -298,9 +310,10 @@ classdef ConfigOrgParams
             % USB 'joystick' axis gain (ReadCursorPosition.m). Sign = axis
             % direction, magnitude = pixels-per-unit travel. Was hardcoded -1.3.
             orgParams.joyGain        = -1.3;
-            orgParams.rz2ScaleX      = 1;   % relay already normalizes to [-1,1] -- this is pixel scale on top of that
+            orgParams.rz2ScaleX      = -1;  % negative: rig's X axis reads inverted relative to screen pixels -- relay already normalizes to [-1,1], this is pixel scale (and direction) on top of that
             orgParams.rz2ScaleY      = 1;   % JoystickRelayToTask.m now sends real JoyY too (APICh2/Adc2)
-            orgParams.rz2OffsetY     = 0;   % Y only -- see SetupRZ2Joystick.m
+            orgParams.rz2OffsetX     = 0;   % X pixel offset -- see SetupRZ2Joystick.m
+            orgParams.rz2OffsetY     = 250;   % Y pixel offset -- see SetupRZ2Joystick.m
             % The ADC's REAL sample rate, used by ReadRZ2Joystick.m to turn
             % the relay's sample index into elapsed time. NOT the relay's
             % forwarding rate (N_READ*RELAY_HZ, held under the writer on

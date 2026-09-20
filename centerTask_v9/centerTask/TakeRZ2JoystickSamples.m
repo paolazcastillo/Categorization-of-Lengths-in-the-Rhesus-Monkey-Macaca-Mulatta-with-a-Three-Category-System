@@ -19,7 +19,7 @@ function samples = TakeRZ2JoystickSamples(rz2Port)
 % OUTPUT
 %   samples : N x 4 [time, vx, vy, absIdx], oldest first. vx/vy are raw
 %             normalized joystick units (not yet scaled to screen pixels --
-%             see rz2.scaleX/scaleY/offsetY in ReadCursorPosition.m).
+%             see rz2.scaleX/scaleY/offsetX/offsetY in ReadCursorPosition.m).
 %             time is in this machine's GetSecs frame (RZ2ClockMap, see
 %             ReadRZ2Joystick.m), NOT a free-running index clock.
 %             absIdx is the relay's absolute sample index, or NaN for a

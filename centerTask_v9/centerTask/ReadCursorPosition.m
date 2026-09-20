@@ -7,7 +7,7 @@ function [x, y] = ReadCursorPosition(taskWindow, inputSource, joy, rz2, xCenter,
 % original per-engine code). 'rz2adc' reads a SECOND, ADC-wired analog
 % joystick relayed over UDP from Computer 1 (JoystickRelayToTask.m ->
 % SetupRZ2Joystick.m/ReadRZ2Joystick.m), scaled by its OWN independently-
-% tunable rz2.scaleX/scaleY/offsetY -- its native ADC voltage range has no
+% tunable rz2.scaleX/scaleY/offsetX/offsetY -- its native ADC voltage range has no
 % reason to match the USB joystick's [-1, 1], so it is not forced through
 % the same -1.3/pointer_offset pair. Every raw sample the relay delivered
 % between frames is separately logged to the trajectory by
@@ -26,7 +26,7 @@ switch inputSource
         [x, y] = GetMouse(taskWindow);
     case 'rz2adc'
         [vx, vy] = ReadRZ2Joystick(rz2);
-        x = xCenter + screenXpixels * vx * rz2.scaleX;
+        x = xCenter + rz2.offsetX + screenXpixels * vx * rz2.scaleX;
         y = yCenter + rz2.offsetY + screenYpixels * vy * rz2.scaleY;
     otherwise   % 'joystick'
         axesVals = read(joy);

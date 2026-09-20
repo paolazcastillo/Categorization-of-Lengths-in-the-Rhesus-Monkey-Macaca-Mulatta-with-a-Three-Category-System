@@ -24,8 +24,21 @@ function CenterOutTask(orgParams)
 %   target in that same colour (nothing to choose between), phase 2 adds one
 %   foil target in a different category colour, picking the foil is an
 %   ordinary wrong-target error and gets the usual error flash. Both reuse
-%   this file's state machine, retry/requeue logic and logging untouched;
-%   see the "Training phases" block in SETUP. Pair with
+%   this file's state machine, retry/requeue logic and logging untouched
+%   EXCEPT for three training-only differences (all gated on
+%   trainingPhase > 0, never active in the trainingPhase == 0 categorization
+%   task):
+%     - A correction retry (same bar re-presented after an error, when
+%       maxStimAttempts allows more than one attempt) keeps the exact same
+%       target positions/colours instead of reshuffling them (see the
+%       trainingPhase == 0 guard around the retry branch in the trial loop).
+%     - Error type 1 (early exit / timeout) additionally flashes -- see
+%       EP.ERROR_FB's flashError. Outside training it stays silent, unchanged.
+%     - The incorrect target(s)' colour is blended toward black by
+%       orgParams.trainingFoilFadePct percent (console "Foil fade toward
+%       black (%)"), a graded visual aid toward the correct target; see
+%       placeTargets().
+%   See the "Training phases" block in SETUP. Pair with
 %   orgParams.barLengthSubset (console "Bar lengths (subset)", see
 %   ParseBarSubset.m) to drill one bar length (hence one colour) before
 %   opening the selection up.
@@ -34,10 +47,12 @@ function CenterOutTask(orgParams)
 %     0  correct
 %     1  early exit / timeout -- never reached the correct target (left the
 %        centre too early, never departed in time, never arrived in time, or
-%        broke the hold with orgParams.strictHold on). Never flashes.
+%        broke the hold with orgParams.strictHold on). Flashes only in
+%        training (trainingPhase > 0); silent in the categorization task.
 %     2  wrong target -- entered a target of the wrong category. This IS the
 %        trial's response, so it is the only outcome the confusion matrix
-%        counts off-diagonal.
+%        counts off-diagonal. ALWAYS flashes and ALWAYS aborts the trial, in
+%        every phase (forgiveFoils forced off, 2026-09-15 -- see SETUP).
 %     3  hold-break -- reached the CORRECT target and left it before
 %        completing minTarHoldTime. Only ever produced in pre-training with
 %        orgParams.trainingErrorFlash on (console "Training error flash");
@@ -347,25 +362,26 @@ barOffsetY_default = OrgGet(orgParams, 'barOffsetY', -150);
 % Pair with the bar subset above to drill a single colour first (e.g. '1'
 % for Short only), then widen the selection as the subject improves.
 trainingPhase = OrgGet(orgParams, 'trainingPhase', 0);
-% Error flash policy (console "Show error flash", pre-training). A failed
-% hold/reach (error_type 1, an early exit / not completing) ALWAYS flashes;
-% the wrong-target pick (error_type 2, the phase-2 foil) flashes only when
-% this is on. Off by default: the foil pick then just resolves without a
-% flash. See EP.ERROR_FB below.
+% Console "Show error flash". Read only so a saved config keeps working;
+% has NO EFFECT any more (2026-09-15) -- see the Flash policy comment in
+% EP.ERROR_FB below. Left wired rather than deleted, same call as
+% foilFlashUntil/forgiveFoils just above.
 showErrorFlash = logical(OrgGet(orgParams, 'showErrorFlash', false));
 
 % Strict training feedback (console "Training error flash"). SOLO afecta a
 % las fases de entrenamiento (trainingPhase > 0); la tarea de categorizacion
 % (trainingPhase == 0) queda EXACTAMENTE igual, sin importar este flag.
-% Cuando esta activo:
-%   (a) tocar el target INCORRECTO/foil => error CON flash (error_type = 2),
-%       lo que ademas DESACTIVA el modo indulgente foilNoAbort de abajo.
+%
+% 2026-09-15: el punto (a) de abajo (foil => error con flash, y desactivar
+% el modo indulgente) YA NO depende de este flag -- ahora es SIEMPRE asi,
+% en cualquier fase (ver forgiveFoils/flashError). Lo unico que este flag
+% sigue gobernando es (b):
 %   (b) SALIR del target correcto antes de completar minTarHoldTime (romper
 %       el hold) => error CON flash (error_type = 3, hold-break), en lugar
 %       de solo reiniciar el conteo y permitir el reingreso.
-% Default = true: en entrenamiento se marca error con flash en ambos casos.
-% Ponlo en false para recuperar la conducta indulgente (el foil no aborta y
-% salir del target solo reinicia el hold).
+% Default = true. Ponlo en false para recuperar la conducta indulgente SOLO
+% en (b) (salir del target solo reinicia el hold, sin abortar); (a) ya no
+% tiene modo indulgente que recuperar.
 %
 % RELACION CON strictHold (definido arriba). Los dos gobiernan el MISMO
 % evento -- romper el hold -- pero en ambitos distintos y con codigos
@@ -380,6 +396,14 @@ showErrorFlash = logical(OrgGet(orgParams, 'showErrorFlash', false));
 % el hold-break quede etiquetado como tal. Ver EP.TARGET_HOLD mas abajo.
 trainingErrorFlash = logical(OrgGet(orgParams, 'trainingErrorFlash', true));
 strictTraining     = trainingErrorFlash && (trainingPhase > 0);
+
+% Foil fade (console "Foil fade toward black (%)"). Training phases only
+% (trainingPhase > 0); ignored entirely in the categorization task. 0-100:
+% how far the incorrect target(s)' colour is blended toward black as a
+% visual aid -- see placeTargets() below, the single place this is applied.
+% Clamped here (not just in the console) so a hand-built orgParams (e.g.
+% OffrigPlay.m) can't feed it an out-of-range value.
+trainingFoilFadePct = min(100, max(0, OrgGet(orgParams, 'trainingFoilFadePct', 50)));
 if ~ismember(trainingPhase, [0 1 2])
     error('CenterOutTask:badTrainingPhase', ...
         'orgParams.trainingPhase must be 0 (off), 1 or 2; got %s.', num2str(trainingPhase));
@@ -425,7 +449,15 @@ foilNoAbort  = logical(OrgGet(orgParams, 'foilNoAbort', 1));
 % strictTraining tiene prioridad: si se pidio marcar el foil como error CON
 % flash (arriba), no se puede a la vez perdonar el foil. Por eso el modo
 % indulgente solo queda activo cuando strictTraining esta apagado.
-forgiveFoils = foilNoAbort && (trainingPhase > 0) && ~strictTraining;
+%
+% FORCED OFF 2026-09-15 (operator requirement): a foil pick must ALWAYS
+% flash and ALWAYS abort the trial, in every training phase, regardless of
+% foilNoAbort/strictTraining -- there is no longer a lenient path. foilNoAbort
+% is still read above (and still logged to S.foilNoAbort below) so a saved
+% config isn't broken by a missing field, but it no longer does anything;
+% the line it used to feed is kept, commented, for how to restore it.
+% forgiveFoils = foilNoAbort && (trainingPhase > 0) && ~strictTraining;
+forgiveFoils = false;
 if forgiveFoils
     fprintf(['Foil-forgiving ON: los distractores NO abortan el ensayo; el sujeto ' ...
         'puede seguir hasta el target correcto (limite de movimiento: maxExecutionTime = %.2fs).\n'], ...
@@ -720,10 +752,22 @@ fid_log = fopen(trialLogFile, 'w');
 % down); the two only differ for a trial that needed a retry, and only
 % this per-attempt CSV (not the printed console report) records both side
 % by side, so a retry's actual vs. planned position is fully auditable here.
+%
+% FoilCategory1/FoilDirection1, FoilCategory2/FoilDirection2 = the
+% INCORRECT target(s) shown this attempt (every slot in trialColorRows/
+% trialDirs except trialCorrectSlot), independent of sessionMode or
+% trainingPhase: nc==1 (training phase 1) has zero foils, nc==2 (2-cat
+% trials, or training phase 2) has exactly one, nc==3 (3-cat trials) has
+% two -- unused foil columns are 'None', same convention as dirChosenStr's
+% early-exit case above. Slot order (not category order) is preserved, so
+% a retry's reshuffled foil colour/position round-trips through these
+% columns exactly as shown, the same guarantee DirectionCorrect gives the
+% correct target. See the CategoriesForTrial/layoutForTrial comments in
+% SETUP and the trial loop for where catRows -> slotCol/slotDir is decided.
 fprintf(fid_log, ['Date,Block,TrialNumInBlock,StimulusGroup,BarSizeVA_deg,DecisionTime_s,' ...
                 'ExecutionTime_s,TotalTime_s,TakeoffTime_s,IsCorrect,ErrorType,DirectionChosen,DirectionCorrect,' ...
                 'PlannedDirection,ChosenTarget,PrevTrialCorrect,PrevTrialDirection,Attempt,' ...
-                'NumCategories,SessionMode\n']);
+                'NumCategories,SessionMode,FoilCategory1,FoilDirection1,FoilCategory2,FoilDirection2\n']);
 fclose(fid_log);
 fprintf('Trial log file created:      %s\n', trialLogFile);
 
@@ -1348,6 +1392,10 @@ end
 % "Show error flash" checkbox is on, the screen flashes white/black until
 % this time WITHOUT aborting the trial (see the Render block and EP.MOVEMENT).
 % 0 = no flash pending. foilFlashStart anchors the white/black alternation.
+% 2026-09-15: the branch that ever SETS this (EP.MOVEMENT's forgiveFoils
+% case) is now unreachable -- see forgiveFoils below -- so this stays 0 for
+% the rest of the session. Left in place rather than stripped out: harmless
+% dead state, and the render-block check below costs nothing.
 foilFlashUntil = 0;
 foilFlashStart = 0;
 
@@ -1422,16 +1470,18 @@ while exitFlag == 0
             stimAttempt = 1;
         else
             stimAttempt = stimAttempt + 1;
-            % Correction retry: same bar/category, but reshuffle which target
-            % gets which colour (and a fresh random correct DIRECTION) so the
-            % subject can't just avoid the spot that was wrong last time;
-            % they have to read the bar again. This means current_trial_direction
-            % (Performance Matrix, trial_data_*.csv's DirectionCorrect) can
-            % differ from trialPositions (good_trials_lenpos, PlannedDirection)
-            % for a trial that needed a retry; see PlannedDirection's header
-            % comment above trialLogFile's fopen for how that's reconciled: a
-            % success here doesn't verify THIS slot's original, un-reshuffled
-            % (bar, position) combination specifically, so whenever this slot
+            % Correction retry: same bar/category. Outside training
+            % (trainingPhase == 0, the categorization task) this reshuffles
+            % which target gets which colour (and a fresh random correct
+            % DIRECTION) so the subject can't just avoid the spot that was
+            % wrong last time; they have to read the bar again. This means
+            % current_trial_direction (Performance Matrix, trial_data_*.csv's
+            % DirectionCorrect) can differ from trialPositions
+            % (good_trials_lenpos, PlannedDirection) for a trial that needed
+            % a retry; see PlannedDirection's header comment above
+            % trialLogFile's fopen for how that's reconciled: a success here
+            % doesn't verify THIS slot's original, un-reshuffled (bar,
+            % position) combination specifically, so whenever this slot
             % finally resolves (succeeds, here or on a later retry, or
             % exhausts maxStimAttempts below), it queues exactly one clean,
             % un-reshuffled repeat of itself at the end of the sequence;
@@ -1440,20 +1490,29 @@ while exitFlag == 0
             % category already always sits at its own fixed direction, so
             % this retry lands on the exact same layout as before, same as
             % a fresh randi(4) draw would if it happened to match.)
-            % In training phase 2 this also redraws WHICH foil colour the
-            % distractor wears (see CategoriesForTrial); same reasoning as
-            % the position reshuffle: the retry must not be solvable by
-            % remembering last attempt's wrong answer. trueCat is unchanged
-            % by construction (it follows the bar length), so
-            % trialCatIndices stays valid.
-            nc = trialNumCat(trial_sequence_index);
-            [retryCatRows, retryTrueCat] = CategoriesForTrial(nc, trialBarIndices(trial_sequence_index), ...
-                trainingPhase, lengthCategory, lengthCat2, colorRows2, colorRows3);
-            [slotDir, slotCol, correctSlot] = layoutForTrial(fixedTargetLayout, catDirMap, ...
-                nc, retryTrueCat, retryCatRows, randi(4));
-            trialDirs(trial_sequence_index, 1:nc)      = slotDir;
-            trialColorRows(trial_sequence_index, 1:nc) = slotCol;
-            trialCorrectSlot(trial_sequence_index)     = correctSlot;
+            % In training phase 2 this would also redraw WHICH foil colour
+            % the distractor wears (see CategoriesForTrial); same reasoning
+            % as the position reshuffle: the retry must not be solvable by
+            % remembering last attempt's wrong answer.
+            %
+            % In training (trainingPhase > 0) the reshuffle is skipped on
+            % purpose: unlike the categorization task, training is meant to
+            % let the subject re-attempt the EXACT same bar/target layout
+            % that was just missed, not a relabelled one. trialDirs/
+            % trialColorRows/trialCorrectSlot for this slot already hold
+            % that original layout (set when the sequence was built, or by
+            % an earlier retry, which -- being training too -- never changed
+            % them either), so there's nothing to recompute here.
+            if trainingPhase == 0
+                nc = trialNumCat(trial_sequence_index);
+                [retryCatRows, retryTrueCat] = CategoriesForTrial(nc, trialBarIndices(trial_sequence_index), ...
+                    trainingPhase, lengthCategory, lengthCat2, colorRows2, colorRows3);
+                [slotDir, slotCol, correctSlot] = layoutForTrial(fixedTargetLayout, catDirMap, ...
+                    nc, retryTrueCat, retryCatRows, randi(4));
+                trialDirs(trial_sequence_index, 1:nc)      = slotDir;
+                trialColorRows(trial_sequence_index, 1:nc) = slotCol;
+                trialCorrectSlot(trial_sequence_index)     = correctSlot;
+            end
         end
         repeat_trial = 0;
         curNumCat = trialNumCat(trial_sequence_index);   % 1, 2 or 3 targets
@@ -1578,7 +1637,7 @@ while exitFlag == 0
         else
             for bi = 1:size(rz2Batch, 1)
                 trajN = trajN + 1;
-                bx = xCenter + screenXpixels * rz2Batch(bi, 2) * rz2.scaleX;
+                bx = xCenter + rz2.offsetX + screenXpixels * rz2Batch(bi, 2) * rz2.scaleX;
                 by = yCenter + rz2.offsetY + screenYpixels * rz2Batch(bi, 3) * rz2.scaleY;
                 % max(...,0): rz2Batch(bi,1) being interpolated from
                 % rz2.port.UserData.lastDrainTime is true only for legacy,
@@ -1662,6 +1721,9 @@ while exitFlag == 0
         % alternate white/black WITHOUT aborting the trial. The normal scene is
         % skipped this frame and reappears when the flash expires; a new foil
         % entry re-arms foilFlashUntil (that is the "reset"). See EP.MOVEMENT.
+        % 2026-09-15: currently unreachable -- see forgiveFoils's header note
+        % in SETUP -- kept rather than stripped for the same reason foilFlashUntil/
+        % Start themselves were kept (see their own declaration above the trial loop).
         if mod(floor((this_time - foilFlashStart) / 0.1), 2) == 0
             Screen('FillRect', taskWindow, white_c);
         else
@@ -1879,7 +1941,8 @@ while exitFlag == 0
                     [tarPos, tarColor, correctTarget, current_trial_color, ...
                         current_trial_direction, centerCueColor, curNumCat, targetOn] = placeTargets( ...
                         trial_sequence_index, trialNumCat, trialDirs, trialColorRows, ...
-                        trialCorrectSlot, trialCatIndices, colorArray2Cat, colorArray3Cat, Targets4Dir);
+                        trialCorrectSlot, trialCatIndices, colorArray2Cat, colorArray3Cat, Targets4Dir, ...
+                        trainingPhase, trainingFoilFadePct);
                     awaitTargetOnset = 1;   % stamped by the next flip, not here
                     nextEpoch = EP.DECISION_TIME;
                 end
@@ -1892,7 +1955,8 @@ while exitFlag == 0
                 [tarPos, tarColor, correctTarget, current_trial_color, ...
                     current_trial_direction, centerCueColor, curNumCat, targetOn] = placeTargets( ...
                     trial_sequence_index, trialNumCat, trialDirs, trialColorRows, ...
-                    trialCorrectSlot, trialCatIndices, colorArray2Cat, colorArray3Cat, Targets4Dir);
+                    trialCorrectSlot, trialCatIndices, colorArray2Cat, colorArray3Cat, Targets4Dir, ...
+                    trainingPhase, trainingFoilFadePct);
                 awaitTargetOnset = 1;   % stamped by the next flip, not here
                 nextEpoch = EP.DECISION_TIME;
             end
@@ -2287,19 +2351,22 @@ while exitFlag == 0
             end
             showCursor = 0;
             % Flash policy, by error type:
-            %   1 (early exit / timeout) NEVER flashes -- the trial just ends
-            %     without reward.
-            %   2 (wrong target) flashes in the NORMAL categorization task
-            %     (trainingPhase == 0) ALWAYS, because it IS the trial's
-            %     response and must be marked. In pre-training it flashes only
-            %     if the operator asked for it, via either the "Show error
-            %     flash" checkbox (showErrorFlash) or "Training error flash"
-            %     (strictTraining, which exists precisely to penalize the foil).
+            %   1 (early exit / timeout -- left centre before its hold was
+            %     done, OR reached DECISION_TIME/MOVEMENT properly but never
+            %     touched a target before maxExecutionTime expired) flashes
+            %     ONLY in training (trainingPhase > 0; operator requirement,
+            %     2026-09-15) -- the categorization task (trainingPhase == 0)
+            %     stays silent on it, unchanged from before.
+            %   2 (wrong target) ALWAYS flashes, in every phase. This used to
+            %     be conditional on showErrorFlash/strictTraining in
+            %     training; as of 2026-09-15 a foil pick must unconditionally
+            %     flash AND abort the trial (see forgiveFoils in SETUP, now
+            %     forced off), so those two checkboxes no longer affect this
+            %     error type at all.
             %   3 (hold-break) ALWAYS flashes: it only ever occurs under
             %     strictTraining, i.e. the operator already asked for the
             %     stricter feedback that produces it.
-            flashError = (error_type == 2 && (trainingPhase == 0 || showErrorFlash || strictTraining)) ...
-                || error_type == 3;
+            flashError = error_type == 2 || error_type == 3 || (error_type == 1 && trainingPhase > 0);
             if flashError
                 if mod(floor((this_time - t.marker) / 0.1), 2) == 0
                     Screen('FillRect', taskWindow, white_c);
@@ -2452,12 +2519,36 @@ while exitFlag == 0
                 % use DIFFERENT length->category splits (lengthCat2 vs
                 % lengthCategory), so without these two columns a pooled
                 % analysis cannot tell which regime produced a given row.
+                %
+                % FoilCategory1/2, FoilDirection1/2: every slot this attempt
+                % actually showed EXCEPT trialCorrectSlot, in slot order (not
+                % category order), read straight from trialColorRows/trialDirs
+                % so a retry's reshuffled foil round-trips exactly as shown.
+                % blkNc==1 has none (both 'None'), blkNc==2 has one (foil 2 is
+                % 'None'), blkNc==3 has two -- true regardless of sessionMode.
+                correctSlot = trialCorrectSlot(trial_sequence_index);
+                foilSlots   = setdiff(1:blkNc, correctSlot);
+                if numel(foilSlots) >= 1
+                    foilCat1 = colorNames_log{trialColorRows(trial_sequence_index, foilSlots(1))};
+                    foilDir1 = directionNames_log{trialDirs(trial_sequence_index, foilSlots(1))};
+                else
+                    foilCat1 = 'None';
+                    foilDir1 = 'None';
+                end
+                if numel(foilSlots) >= 2
+                    foilCat2 = colorNames_log{trialColorRows(trial_sequence_index, foilSlots(2))};
+                    foilDir2 = directionNames_log{trialDirs(trial_sequence_index, foilSlots(2))};
+                else
+                    foilCat2 = 'None';
+                    foilDir2 = 'None';
+                end
                 fid_log = fopen(trialLogFile, 'a');
-                fprintf(fid_log, '%s,%d,%d,%s,%.2f,%.4f,%.4f,%.4f,%.4f,%d,%d,%s,%s,%s,%d,%d,%s,%d,%d,%s\n', ...
+                fprintf(fid_log, '%s,%d,%d,%s,%.2f,%.4f,%.4f,%.4f,%.4f,%d,%d,%s,%s,%s,%d,%d,%s,%d,%d,%s,%s,%s,%s,%s\n', ...
                     sessionDate, blockNum, trialNumInBlock, colorNames_log{current_trial_color}, ...
                     barVA_log, decisionTime, executionTime, totalTime, takeoffTime, good_trial, error_type, ...
                     dirChosenStr, directionNames_log{current_trial_direction}, plannedDirForLog, chosen_target_color, ...
-                    prevTrialCorrect, prevTrialDirection, stimAttempt, blkNc, sessionMode);
+                    prevTrialCorrect, prevTrialDirection, stimAttempt, blkNc, sessionMode, ...
+                    foilCat1, foilDir1, foilCat2, foilDir2);
                 fclose(fid_log);
                 prevTrialCorrect   = good_trial;
                 prevTrialDirection = dirChosenStr;
@@ -2986,7 +3077,8 @@ end
 
 function [tarPos, tarColor, correctTarget, trialColor, trialDir, centerCueColor, numCat, targetOn] = ...
         placeTargets(idx, trialNumCat, trialDirs, trialColorRows, ...
-                    trialCorrectSlot, trialCatIndices, colorArray2Cat, colorArray3Cat, Targets4Dir)
+                    trialCorrectSlot, trialCatIndices, colorArray2Cat, colorArray3Cat, Targets4Dir, ...
+                    trainingPhase, foilFadePct)
 % Thin wrapper around AssignTargets() that also turns on the right number of
 % targets; the line both AssignTargets call sites need (end of EP.CUE and
 % EP.CUE_DELAY).
@@ -3012,6 +3104,22 @@ end
     AssignTargets(idx, trialNumCat, trialDirs, trialColorRows, ...
         trialCorrectSlot, trialCatIndices, colorArray, Targets4Dir);
 targetOn = [0 0 0];  targetOn(1:numCat) = 1;
+
+% Foil fade (training phases only, orgParams.trainingFoilFadePct, console
+% "Foil fade toward black (%)"): blend every INCORRECT target's colour
+% toward black by foilFadePct%, a visual aid pointing the subject at the
+% correct target. correctTarget itself is never touched. No-op outside
+% training (trainingPhase == 0) or when foilFadePct is 0 -- tarColor is
+% returned exactly as AssignTargets built it, same as before this option
+% existed.
+if trainingPhase > 0 && foilFadePct > 0
+    fadeFrac = foilFadePct / 100;   % 0 = untouched, 1 = pure black
+    for k = 1:numCat
+        if k ~= correctTarget
+            tarColor{k} = tarColor{k} * (1 - fadeFrac);
+        end
+    end
+end
 end
 
 function [slotDir, slotCol, correctSlot] = layoutForTrial(fixedTargetLayout, catDirMap, nc, trueCat, catRows, correctDir)

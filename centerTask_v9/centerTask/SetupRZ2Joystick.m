@@ -20,8 +20,8 @@ function rz2 = SetupRZ2Joystick(orgParams, remoteHost)
 %
 % INPUT
 %   orgParams  : struct of run parameters (rz2UdpPort/rz2RelaySourcePort/
-%                rz2ScaleX/rz2ScaleY/rz2OffsetY -- see ConfigOrgParams.m's
-%                "RZ2 ANALOG JOYSTICK" section)
+%                rz2ScaleX/rz2ScaleY/rz2OffsetX/rz2OffsetY -- see
+%                ConfigOrgParams.m's "RZ2 ANALOG JOYSTICK" section)
 %   remoteHost : Computer 1's address (orgParams.remoteSynapseHost). The
 %                new udpport() interface doesn't need this -- a UDP
 %                listener just binds a local port -- but the legacy udp()
@@ -33,7 +33,7 @@ function rz2 = SetupRZ2Joystick(orgParams, remoteHost)
 % OUTPUT
 %   rz2 : struct with fields .port (udpport or legacy udp handle),
 %         .useNewUDP (which interface .port is, for ReadRZ2Joystick.m),
-%         .scaleX, .scaleY, .offsetY -- see ReadRZ2Joystick.m/
+%         .scaleX, .scaleY, .offsetX, .offsetY -- see ReadRZ2Joystick.m/
 %         ReadCursorPosition.m for how it's read.
 %
 % A firewall/NAT hole-punch workaround (having this machine write to
@@ -117,7 +117,8 @@ rz2 = struct( ...
     'useNewUDP', useNewUDP, ...
     'scaleX',    OrgGet(orgParams, 'rz2ScaleX',  1), ...
     'scaleY',    OrgGet(orgParams, 'rz2ScaleY',  1), ...  % JoystickRelayToTask.m sends real JoyY (APICh2Y/Adc2)
-    'offsetY',   OrgGet(orgParams, 'rz2OffsetY', 0), ...
+    'offsetX',   OrgGet(orgParams, 'rz2OffsetX', 0), ...  % pixel offset from xCenter -- see ReadCursorPosition.m
+    'offsetY',   OrgGet(orgParams, 'rz2OffsetY', 0), ...  % pixel offset from yCenter -- see ReadCursorPosition.m
     ... % SEED for the clock map below, and the centre of its slope clamp.
     ... % No longer the divisor that converts index to time on its own: see
     ... % RZ2ClockMap.m and the 'clock' field further down.

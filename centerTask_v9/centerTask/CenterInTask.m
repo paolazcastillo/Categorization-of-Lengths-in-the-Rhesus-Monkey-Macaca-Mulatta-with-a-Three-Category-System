@@ -676,7 +676,7 @@ while exitFlag == 0
         else
             for bi = 1:size(rz2Batch, 1)
                 trajN = trajN + 1;
-                bx = xCenter + screenXpixels * rz2Batch(bi, 2) * rz2.scaleX;
+                bx = xCenter + rz2.offsetX + screenXpixels * rz2Batch(bi, 2) * rz2.scaleX;
                 by = yCenter + rz2.offsetY + screenYpixels * rz2Batch(bi, 3) * rz2.scaleY;
                 % max(...,0): rz2Batch(bi,1) being interpolated from
                 % rz2.port.UserData.lastDrainTime is true only for legacy,

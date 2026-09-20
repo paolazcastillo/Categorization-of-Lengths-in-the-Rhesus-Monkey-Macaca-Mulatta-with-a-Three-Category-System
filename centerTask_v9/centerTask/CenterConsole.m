@@ -441,6 +441,19 @@ classdef CenterConsole < handle
                 % flashed errors (types 2 and 3). Ignored when Training phase
                 % is "0 - off". See strictTraining in CenterOutTask.m.
                 params.trainingErrorFlash = logical(get(self.ui.chkTrainingErrorFlash, 'Value'));
+                % Foil fade (0-100%, training phases only) -- validated the
+                % same inline way as Reward/Max attempts/RZ2 gain above, not
+                % via gatherFields, since it sits in this Center-Out-only
+                % column rather than ui.edTiming. See placeTargets() in
+                % CenterOutTask.m.
+                foilFadeVal = str2double(get(self.ui.edTrainingFoilFadePct, 'String'));
+                if isnan(foilFadeVal) || foilFadeVal < 0 || foilFadeVal > 100
+                    set(self.ui.edTrainingFoilFadePct, 'BackgroundColor', [1 0.7 0.7]);
+                    allValid = false;
+                else
+                    set(self.ui.edTrainingFoilFadePct, 'BackgroundColor', [1 1 1]);
+                end
+                params.trainingFoilFadePct = foilFadeVal;
                 % 0 = white bar (default); 1 = bar drawn in full category colour.
                 params.barColorIntensity = double(get(self.ui.chkBarColour, 'Value'));
                 % false (default) = per-trial colour/position shuffle; true =
@@ -1021,18 +1034,24 @@ classdef CenterConsole < handle
                 'seconds only instead of guessing a volume.']);
 
             % Pre-training Center-Out feedback options (in the space the
-            % removed Kinematics block used to occupy). "Show error flash"
-            % controls ONLY the wrong-target (phase-2 foil) flash; a failed
-            % hold/reach always flashes. Off by default.
+            % removed Kinematics block used to occupy).
             uicontrol('Parent', p, 'Style', 'text', 'String', 'Pre-training feedback', 'FontWeight', 'bold', ...
                 'FontSize', 10, 'BackgroundColor', self.panelBG, ...
                 'Position', [950 140 220 18], 'HorizontalAlignment', 'left');
+            % 2026-09-15: reaching the foil now ALWAYS flashes and ALWAYS
+            % aborts the trial, in every phase (operator requirement -- see
+            % forgiveFoils/flashError in CenterOutTask.m). This checkbox no
+            % longer changes that; kept (not removed) only so an existing
+            % saved config isn't left with a dangling field, and the value
+            % is still gathered/logged. Left field, not deleted, per the
+            % same "harmless dead state" call as foilFlashUntil.
             self.ui.chkShowErrorFlash = uicontrol('Parent', p, 'Style', 'checkbox', ...
-                'String', 'Show error flash (wrong-target pick)', self.labelFont{:}, ...
-                'BackgroundColor', self.panelBG, 'Position', [950 114 300 20], ...
+                'String', 'Show error flash (wrong-target pick) [no effect]', self.labelFont{:}, ...
+                'BackgroundColor', self.panelBG, 'Position', [950 114 320 20], ...
                 'Value', double(d.showErrorFlash), ...
-                'TooltipString', ['Off (default): reaching the phase-2 foil (wrong target) does not flash. ' ...
-                'On: it flashes. A failed hold/reach (early exit) always flashes regardless.']);
+                'TooltipString', ['NO LONGER HAS ANY EFFECT (2026-09-15): reaching the foil now always ' ...
+                'flashes and always aborts the trial, in every phase, regardless of this checkbox. ' ...
+                'Left in place only so it does not silently vanish from a saved config.']);
             % Gray-until-holding for Center-Out (same effect and default as
             % Center-In's own checkbox). On (default): centre ring gray while
             % waiting, green once the hold starts. Off: always green.
@@ -1068,6 +1087,22 @@ classdef CenterConsole < handle
                 'with flash (and the foil no longer gets forgiven), and releasing the correct ' ...
                 'target before completing the hold is a hold-break error (ErrorType 3) with ' ...
                 'flash, counted separately from early exits. Off: the lenient behaviour.']);
+            % Foil fade: a training-only visual aid, not a feedback/flash
+            % option, but kept in this same "Pre-training feedback" block
+            % since it's the last free row in the Center-Out-only column and
+            % it's still training-phase-gated feedback. Blends every
+            % INCORRECT target's colour toward black by this percentage, so
+            % the subject has a graded hint toward the correct one; 0 =
+            % off/full colour (no hint).
+            uicontrol('Parent', p, 'Style', 'text', 'String', 'Foil fade -> black (%)', self.labelFont{:}, ...
+                'BackgroundColor', self.panelBG, 'Position', [950 18 145 18], 'HorizontalAlignment', 'left');
+            self.ui.edTrainingFoilFadePct = self.mkEdit(p, num2str(d.trainingFoilFadePct), [1100 16 60 22]);
+            set(self.ui.edTrainingFoilFadePct, 'TooltipString', ...
+                ['TRAINING PHASES ONLY (Training phase 1 or 2); ignored in the categorization task. ' ...
+                '0-100: how far the INCORRECT target''s colour is blended toward black (the screen ' ...
+                'background), as a visual aid pointing at the correct target. 0 = full colour ' ...
+                '(no aid). 100 = the foil renders pure black, i.e. invisible against the ' ...
+                'background. Default 50. The correct target''s colour is never touched.']);
 
             % There are deliberately NO kinematics controls in this GUI:
             % CenterOutTask.m no longer computes per-trial kinematics at all.
@@ -1263,7 +1298,8 @@ classdef CenterConsole < handle
             ciState = onoff{~isCenterIn + 1};   % Center-In-only:  off when Center-Out
             coHandles = {'popStimulusSet','chkShowCue','chkBarColour','popStopMode', ...
                 'edStopQuota','popTrainingPhase','edBarSubset','chkShowErrorFlash', ...
-                'chkHoldColorEffectCO','chkStrictHold','edColor3CatShort','edColor3CatMid','edColor3CatLong', ...
+                'chkHoldColorEffectCO','chkStrictHold','edTrainingFoilFadePct', ...
+                'edColor3CatShort','edColor3CatMid','edColor3CatLong', ...
                 'edColor2CatShort','edColor2CatLong'};
             ciHandles = {'chkCenterInReach','edCenterInWeights','edCenterInTargetColor', ...
                 'edCenterInJitter','chkHoldColorEffect','edCenterInTrials'};
