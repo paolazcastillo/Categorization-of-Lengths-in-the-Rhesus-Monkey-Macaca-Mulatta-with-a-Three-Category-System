@@ -60,6 +60,21 @@ function CenterOutTask(orgParams)
 %        nothing about whether the subject read the colour rule -- it is a
 %        motor/patience failure on a trial the subject had already got right.
 %
+%   TARGET LAYOUT (CatAtRight_0/CatAtUp_90/CatAtLeft_180/CatAtDown_270,
+%   trial_data_*.csv, added in v8.24, lost in the v8.25 rewrite, restored in
+%   v10.00; renamed with the angle suffix to match directionNames_log's own
+%   convention). The
+%   category (1=Short, 2=Mid, 3=Long) of the target drawn at each of the four
+%   cardinal positions on THIS attempt, 0 where no target was drawn. Together
+%   with DirectionChosen this is the full response alternative set of the
+%   trial, which is what lets a motor (direction) bias be separated from a
+%   decision (category) bias offline: without it, PrevTrialDirection cannot
+%   be related to the chosen category because the layout is reshuffled every
+%   trial (DrawTrialLayout.m). Written from trialDirs/trialColorRows, which a
+%   correction retry reshuffles in place, so the four columns always describe
+%   the layout that was actually on screen for that row. Appended after
+%   SessionMode so every earlier column keeps its position.
+%
 %   INPUT  orgParams : struct of GUI handles and run parameters (from
 %          CenterConsole.m's runTask, or built by hand by a
 %          caller like OffrigPlay.m).
@@ -752,22 +767,13 @@ fid_log = fopen(trialLogFile, 'w');
 % down); the two only differ for a trial that needed a retry, and only
 % this per-attempt CSV (not the printed console report) records both side
 % by side, so a retry's actual vs. planned position is fully auditable here.
-%
-% FoilCategory1/FoilDirection1, FoilCategory2/FoilDirection2 = the
-% INCORRECT target(s) shown this attempt (every slot in trialColorRows/
-% trialDirs except trialCorrectSlot), independent of sessionMode or
-% trainingPhase: nc==1 (training phase 1) has zero foils, nc==2 (2-cat
-% trials, or training phase 2) has exactly one, nc==3 (3-cat trials) has
-% two -- unused foil columns are 'None', same convention as dirChosenStr's
-% early-exit case above. Slot order (not category order) is preserved, so
-% a retry's reshuffled foil colour/position round-trips through these
-% columns exactly as shown, the same guarantee DirectionCorrect gives the
-% correct target. See the CategoriesForTrial/layoutForTrial comments in
-% SETUP and the trial loop for where catRows -> slotCol/slotDir is decided.
+% CatAtRight_0..CatAtDown_270 = category drawn at each cardinal position
+% this attempt, 0 = no target there; see the TARGET LAYOUT note in the file
+% header. Trailing columns, so readers indexing by position are unaffected.
 fprintf(fid_log, ['Date,Block,TrialNumInBlock,StimulusGroup,BarSizeVA_deg,DecisionTime_s,' ...
                 'ExecutionTime_s,TotalTime_s,TakeoffTime_s,IsCorrect,ErrorType,DirectionChosen,DirectionCorrect,' ...
                 'PlannedDirection,ChosenTarget,PrevTrialCorrect,PrevTrialDirection,Attempt,' ...
-                'NumCategories,SessionMode,FoilCategory1,FoilDirection1,FoilCategory2,FoilDirection2\n']);
+                'NumCategories,SessionMode,CatAtRight_0,CatAtUp_90,CatAtLeft_180,CatAtDown_270\n']);
 fclose(fid_log);
 fprintf('Trial log file created:      %s\n', trialLogFile);
 
@@ -2520,35 +2526,26 @@ while exitFlag == 0
                 % lengthCategory), so without these two columns a pooled
                 % analysis cannot tell which regime produced a given row.
                 %
-                % FoilCategory1/2, FoilDirection1/2: every slot this attempt
-                % actually showed EXCEPT trialCorrectSlot, in slot order (not
-                % category order), read straight from trialColorRows/trialDirs
-                % so a retry's reshuffled foil round-trips exactly as shown.
-                % blkNc==1 has none (both 'None'), blkNc==2 has one (foil 2 is
-                % 'None'), blkNc==3 has two -- true regardless of sessionMode.
-                correctSlot = trialCorrectSlot(trial_sequence_index);
-                foilSlots   = setdiff(1:blkNc, correctSlot);
-                if numel(foilSlots) >= 1
-                    foilCat1 = colorNames_log{trialColorRows(trial_sequence_index, foilSlots(1))};
-                    foilDir1 = directionNames_log{trialDirs(trial_sequence_index, foilSlots(1))};
-                else
-                    foilCat1 = 'None';
-                    foilDir1 = 'None';
-                end
-                if numel(foilSlots) >= 2
-                    foilCat2 = colorNames_log{trialColorRows(trial_sequence_index, foilSlots(2))};
-                    foilDir2 = directionNames_log{trialDirs(trial_sequence_index, foilSlots(2))};
-                else
-                    foilCat2 = 'None';
-                    foilDir2 = 'None';
+                % CatAtRight_0..CatAtDown_270: the category drawn at each of
+                % the four cardinal positions on THIS attempt (0 = no target
+                % there). Read from trialDirs/trialColorRows for the first
+                % blkNc slots, which is exactly what placeTargets drew: a
+                % correction retry overwrites those rows in place at trial
+                % start, so this is the layout actually shown, not the
+                % originally scheduled one. Direction index 1..4 =
+                % Right/Up/Left/Down, matching directionNames_log.
+                catAtDir = zeros(1, 4);
+                for slotK = 1:blkNc
+                    catAtDir(trialDirs(trial_sequence_index, slotK)) = ...
+                        trialColorRows(trial_sequence_index, slotK);
                 end
                 fid_log = fopen(trialLogFile, 'a');
-                fprintf(fid_log, '%s,%d,%d,%s,%.2f,%.4f,%.4f,%.4f,%.4f,%d,%d,%s,%s,%s,%d,%d,%s,%d,%d,%s,%s,%s,%s,%s\n', ...
+                fprintf(fid_log, '%s,%d,%d,%s,%.2f,%.4f,%.4f,%.4f,%.4f,%d,%d,%s,%s,%s,%d,%d,%s,%d,%d,%s,%d,%d,%d,%d\n', ...
                     sessionDate, blockNum, trialNumInBlock, colorNames_log{current_trial_color}, ...
                     barVA_log, decisionTime, executionTime, totalTime, takeoffTime, good_trial, error_type, ...
                     dirChosenStr, directionNames_log{current_trial_direction}, plannedDirForLog, chosen_target_color, ...
                     prevTrialCorrect, prevTrialDirection, stimAttempt, blkNc, sessionMode, ...
-                    foilCat1, foilDir1, foilCat2, foilDir2);
+                    catAtDir(1), catAtDir(2), catAtDir(3), catAtDir(4));
                 fclose(fid_log);
                 prevTrialCorrect   = good_trial;
                 prevTrialDirection = dirChosenStr;
