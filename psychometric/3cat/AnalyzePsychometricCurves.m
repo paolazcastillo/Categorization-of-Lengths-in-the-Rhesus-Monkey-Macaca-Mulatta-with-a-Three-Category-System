@@ -61,6 +61,15 @@ function results = AnalyzePsychometricCurves(csvPath, varargin)
 %     'FitOrdinalModel'     (default true)     -- see STEP 4 below
 %     'OutDir'              (default: <csv folder>/psychometric_analysis)
 %     'Verbose'             (default true)
+%     'ChronometricTimeSource' (default 'TargetReached') -- 'TargetReached' |
+%                            'Takeoff'; forwarded to LoadSessionTrialData.m.
+%                            This script itself does not build a chronometric
+%                            curve (that is AnalyzePsychometricCurvesMultiSession.m's
+%                            job), but accepts and forwards this option so a
+%                            caller pooling sessions (or falling back to a
+%                            single unpooled one, as
+%                            AnalyzePsychometricCurvesAlternating.m does) can
+%                            pass ONE consistent option to both.
 
 %   USAGE
 %     results = AnalyzePsychometricCurves('trial_data_sessROM_31Jul2026_1605.csv');
@@ -84,6 +93,8 @@ addParameter(p, 'FigureVisible', true, @(x) islogical(x) || isnumeric(x));
 addParameter(p, 'FitOrdinalModel', true, @(x) islogical(x) || isnumeric(x));
 addParameter(p, 'OutDir', '', @(s) ischar(s) || (isstring(s) && isscalar(s)));
 addParameter(p, 'Verbose', true, @(x) islogical(x) || isnumeric(x));
+addParameter(p, 'ChronometricTimeSource', 'TargetReached', ...
+    @(s) any(strcmpi(s, {'TargetReached', 'Takeoff'})));
 parse(p, csvPath, varargin{:});
 opt = p.Results;
 csvPath = char(opt.csvPath);
@@ -115,7 +126,7 @@ vprintf(verbose, '\n======= AnalyzePsychometricCurves: %s =======\n', csvBase);
 % see that function's own header for why a shared loader matters here
 % (same ChosenTarget-code-learning / exclusion edge cases must apply
 % identically to every session being pooled, not just the first one).
-S = LoadSessionTrialData(csvPath, logical(opt.UseFirstAttemptOnly), verbose);
+S = LoadSessionTrialData(csvPath, logical(opt.UseFirstAttemptOnly), verbose, opt.ChronometricTimeSource);
 groupNames = S.groupNames;  groupCode = S.groupCode;  nCat = S.nCat;
 nRowsRaw = S.nRowsRaw;  nRows = S.nRows;
 nOmission = S.nOmission;  nExcludedRetry = S.nExcludedRetry;  nUnexpected = S.nUnexpected;

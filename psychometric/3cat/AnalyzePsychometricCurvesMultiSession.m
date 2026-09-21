@@ -65,6 +65,16 @@ addParameter(p, 'RunPerSessionComparison', true, @(x) islogical(x) || isnumeric(
 addParameter(p, 'PerSessionMakePlots', false, @(x) islogical(x) || isnumeric(x));
 addParameter(p, 'MakeComparisonPlots', false, @(x) islogical(x) || isnumeric(x));
 addParameter(p, 'PerSessionOutDir', '', @(s) ischar(s) || (isstring(s) && isscalar(s)));
+% 'TargetReached' (default) = target-onset -> cursor-enters-target, this
+% function's original chronometric definition. 'Takeoff' = target-onset ->
+% movement takeoff (TakeoffTime_s), for sessions where it exists or has
+% been backfilled -- see LoadSessionTrialData.m and, for older sessions,
+% BackfillTakeoffTime.m (psychometric/alternate). Forwarded to
+% LoadSessionTrialData.m per session below; also relabels the chronometric
+% curve's definition/axis/CSV header so the two definitions are never
+% silently conflated.
+addParameter(p, 'ChronometricTimeSource', 'TargetReached', ...
+    @(s) any(strcmpi(s, {'TargetReached', 'Takeoff'})));
 parse(p, csvPaths, varargin{:});
 opt = p.Results;
 link = lower(opt.LinkFunction);
@@ -118,7 +128,7 @@ vprintf(verbose, '\n======= AnalyzePsychometricCurvesMultiSession: %d sessions =
 S = cell(1, nSessions);
 for i = 1:nSessions
     vprintf(verbose, '\n--- Loading session %d/%d ---\n', i, nSessions);
-    S{i} = LoadSessionTrialData(csvPaths{i}, logical(opt.UseFirstAttemptOnly), verbose);
+    S{i} = LoadSessionTrialData(csvPaths{i}, logical(opt.UseFirstAttemptOnly), verbose, opt.ChronometricTimeSource);
 end
 
 % ===========================================================================
@@ -578,9 +588,17 @@ try
         end
 
         chronometric.available = true;
-        chronometric.timeDefinition = ['target-onset -> cursor enters target (DecisionTime_s + ' ...
-            'ReactionTime_s in current rig terminology; see LoadSessionTrialData.m for era-aware ' ...
-            'column resolution), reported in MILLISECONDS'];
+        if strcmpi(opt.ChronometricTimeSource, 'Takeoff')
+            chronometric.timeDefinition = ['target-onset -> movement takeoff (TakeoffTime_s, ' ...
+                'TrialTakeoff.m''s 5%-of-peak-speed detection; see LoadSessionTrialData.m and, for ' ...
+                'sessions recorded before that column existed, BackfillTakeoffTime.m), reported in MILLISECONDS'];
+            chronometric.timeLabel = 'Target-onset -> movement-takeoff time (ms)';
+        else
+            chronometric.timeDefinition = ['target-onset -> cursor enters target (DecisionTime_s + ' ...
+                'ReactionTime_s in current rig terminology; see LoadSessionTrialData.m for era-aware ' ...
+                'column resolution), reported in MILLISECONDS'];
+            chronometric.timeLabel = 'Target-onset -> cursor-in-target time (ms)';
+        end
         chronometric.timeUnits = 'ms';
         chronometric.xLevels = xLevelsChrono;
         chronometric.meanTimeCorrect = meanTimeCorrect;  chronometric.ciCorrect = ciCorrect;  chronometric.nCorrect = nCorrect;
@@ -1208,7 +1226,8 @@ fclose(fid);
 end
 
 function makeChronometricPlot(chrono, outDir, poolBase, figVisible, nSessions)
-% One figure: mean time-to-target (target-onset -> cursor-entra-al-target)
+% One figure: mean chronometric time (chrono.timeLabel -- target-onset ->
+% cursor-in-target, or -> movement takeoff, per ChronometricTimeSource)
 % vs. bar length, correct trials vs. error trials as two separate series, each with its session-cluster-bootstrap
 % IC95% band.
 if figVisible, visStr = 'on'; else, visStr = 'off'; end
@@ -1249,7 +1268,11 @@ if hasE
     legendH = [legendH, hE];  legendLabels{end+1} = sprintf('error (N=%d)', sum(chrono.nError));
 end
 xlabel('Bar length (deg VA)');
-ylabel('Target-onset -> cursor-in-target time (ms)');
+if isfield(chrono, 'timeLabel') && ~isempty(chrono.timeLabel)
+    ylabel(chrono.timeLabel);
+else
+    ylabel('Target-onset -> cursor-in-target time (ms)');
+end
 title(sprintf('Pooled chronometric curve (%d of %d sessions) -- 95%% cluster-bootstrap CI per session', ...
     chrono.nSessionsChrono, nSessions), 'Interpreter', 'none');
 grid on; box on;

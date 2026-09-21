@@ -4,12 +4,19 @@ function results = AnalyzePsychometricCurvesMultiSessionAlternating(csvPaths, va
 % (ShortGroup/LongGroup) and 3-category blocks (ShortGroup/MidGroup/
 % LongGroup) in the same file, tagged per-row by a NumCategories column.
 %
-% WHAT THIS DOES: splits EVERY input session into its 2-category rows and
-% its 3-category rows (SplitAlternatingSessionCsv.m), then pools all the
-% 2-category splits together through the existing, UNMODIFIED
+% WHAT THIS DOES: backfills a TakeoffTime_s column into EVERY input session
+% that predates it (BackfillTakeoffTime.m -- a no-op for one that already
+% has it), splits each (possibly backfilled) session into its 2-category
+% rows and its 3-category rows (SplitAlternatingSessionCsv.m), then pools
+% all the 2-category splits together through the existing, UNMODIFIED
 % AnalyzePsychometricCurvesMultiSession.m, and separately pools all the
-% 3-category splits together the same way. See SplitAlternatingSessionCsv.m
-% and AnalyzePsychometricCurvesAlternating.m (the single-session sibling of
+% 3-category splits together the same way -- with
+% 'ChronometricTimeSource'='Takeoff' always forced on that call, so the
+% pooled chronometric curve is target-onset -> movement takeoff, not
+% target-onset -> target-reached (not one of this function's own options;
+% see BackfillTakeoffTime.m for why every alternate session can support
+% it). See SplitAlternatingSessionCsv.m and
+% AnalyzePsychometricCurvesAlternating.m (the single-session sibling of
 % this function) for why a split -- not a new fitting engine -- is the
 % correct approach.
 %
@@ -78,6 +85,11 @@ addParameter(p, 'Verbose', true, @(x) islogical(x) || isnumeric(x));
 addParameter(p, 'RunPerSessionComparison', true, @(x) islogical(x) || isnumeric(x));
 addParameter(p, 'PerSessionMakePlots', false, @(x) islogical(x) || isnumeric(x));
 addParameter(p, 'MakeComparisonPlots', false, @(x) islogical(x) || isnumeric(x));
+% Forwarded to BackfillTakeoffTime.m for every session -- set this if the
+% csvPaths were pulled out of their original outputs/ session folders (so
+% each trajectory_movement_*.csv is no longer sitting next to its
+% trial_data_*.csv). See BackfillTakeoffTime.m's own header.
+addParameter(p, 'TrajectoryDir', '', @(s) ischar(s) || (isstring(s) && isscalar(s)));
 parse(p, csvPaths, varargin{:});
 opt = p.Results;
 verbose = logical(opt.Verbose);
@@ -116,26 +128,38 @@ vprintf(verbose, '\n======= AnalyzePsychometricCurvesMultiSessionAlternating: %d
 
 % Options forwarded to AnalyzePsychometricCurves(MultiSession).m for both
 % pools (all of opt except csvPaths/OutDir, which are set per-pool below).
+%
+% ChronometricTimeSource is hardcoded to 'Takeoff' here (not exposed as one
+% of THIS function's own options): the pooled chronometric curve for
+% "alternate" sessions is target-onset -> movement takeoff, full stop, not
+% a choice made per call. See the backfill loop below for why every
+% alternate session can support it even though none of them were recorded
+% with a TakeoffTime_s column.
 fwdMulti = {'UseFirstAttemptOnly', opt.UseFirstAttemptOnly, 'LinkFunction', opt.LinkFunction, ...
     'UseLapseRates', opt.UseLapseRates, 'LapseMax', opt.LapseMax, 'NBootstrap', opt.NBootstrap, ...
     'BootstrapAlpha', opt.BootstrapAlpha, 'MakePlots', opt.MakePlots, 'FigureVisible', opt.FigureVisible, ...
     'FitOrdinalModel', opt.FitOrdinalModel, 'Verbose', opt.Verbose, ...
     'RunPerSessionComparison', opt.RunPerSessionComparison, 'PerSessionMakePlots', opt.PerSessionMakePlots, ...
-    'MakeComparisonPlots', opt.MakeComparisonPlots};
+    'MakeComparisonPlots', opt.MakeComparisonPlots, 'ChronometricTimeSource', 'Takeoff'};
 fwdSingle = {'UseFirstAttemptOnly', opt.UseFirstAttemptOnly, 'LinkFunction', opt.LinkFunction, ...
     'UseLapseRates', opt.UseLapseRates, 'LapseMax', opt.LapseMax, 'NBootstrap', opt.NBootstrap, ...
     'BootstrapAlpha', opt.BootstrapAlpha, 'MakePlots', opt.MakePlots, 'FigureVisible', opt.FigureVisible, ...
-    'FitOrdinalModel', opt.FitOrdinalModel, 'Verbose', opt.Verbose};
+    'FitOrdinalModel', opt.FitOrdinalModel, 'Verbose', opt.Verbose, 'ChronometricTimeSource', 'Takeoff'};
 
 % ===========================================================================
-% SPLIT every session into its 2-category and 3-category rows
+% BACKFILL TakeoffTime_s per session (no-op for one that already has it),
+% THEN SPLIT every (possibly backfilled) session into its 2-category and
+% 3-category rows
 % ===========================================================================
+takeoffBackfillDir = fullfile(outDir, 'takeoff_backfill');
 splitInfoPerSession = cell(1, nSessions);
 list2cat = {};
 list3cat = {};
 for i = 1:nSessions
-    vprintf(verbose, '\n--- Splitting session %d/%d ---\n', i, nSessions);
-    splitInfoPerSession{i} = SplitAlternatingSessionCsv(csvPaths{i}, splitDir, verbose);
+    vprintf(verbose, '\n--- Backfilling + splitting session %d/%d ---\n', i, nSessions);
+    csvPathBackfilled = BackfillTakeoffTime(csvPaths{i}, 'OutDir', takeoffBackfillDir, ...
+        'TrajectoryDir', opt.TrajectoryDir, 'Verbose', verbose);
+    splitInfoPerSession{i} = SplitAlternatingSessionCsv(csvPathBackfilled, splitDir, verbose);
     if ~isempty(splitInfoPerSession{i}.path2cat)
         list2cat{end + 1} = splitInfoPerSession{i}.path2cat; %#ok<AGROW>
     end
@@ -145,7 +169,7 @@ for i = 1:nSessions
 end
 
 results = struct();
-results.csvPaths = csvPaths;
+results.csvPaths = csvPaths;   % the ORIGINAL inputs, unchanged
 results.splitInfoPerSession = splitInfoPerSession;
 results.cat2 = poolBucket(list2cat, '2-category', fullfile(outDir, '2cat'), fwdMulti, fwdSingle, verbose);
 results.cat3 = poolBucket(list3cat, '3-category', fullfile(outDir, '3cat'), fwdMulti, fwdSingle, verbose);

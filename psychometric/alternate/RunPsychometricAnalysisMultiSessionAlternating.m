@@ -34,10 +34,18 @@
 %       a given category count.
 
 % ===========================================================================
-% QUICK-EDIT -- ADJUST THESE 2 PATHS for your computer before running
+% QUICK-EDIT -- ADJUST THESE PATHS for your computer before running
 % ===========================================================================
 startDir  = 'C:\path\to\your\Proyecto\Resultados_Alternating';
 outDir    = 'C:\path\to\your\Proyecto\Resultados_Alternating\PsychometricAnalysis\MultiSession';
+% Only needed if your trial_data_*.csv files were pulled out of their
+% original outputs/ session folders (so trajectory_movement_*.csv is no
+% longer sitting next to each one) -- point this at the task's outputs
+% root (e.g. '...\outputs\alternate') so BackfillTakeoffTime.m can still
+% find them; the chronometric curve is target-onset -> movement takeoff
+% and needs that file. Leave as '' if trial_data_*.csv already lives next
+% to its trajectory_movement_*.csv (the normal, un-consolidated layout).
+trajectoryDir = 'C:\Users\LabB15\Documents\Erick\CategTask_GitHub\Categorization-of-Lengths-in-the-Rhesus-Monkey-Macaca-Mulatta-with-a-Three-Category-System\outputs\alternate';;
 
 % ===========================================================================
 % Always add this script's own folder (src/alternate) AND its sibling
@@ -82,7 +90,8 @@ for i = 1:nFiles
     fprintf('  %d) %s\n', i, fileNames{i});
 end
 
-results = AnalyzePsychometricCurvesMultiSessionAlternating(csvPaths, 'OutDir', outDir);
+results = AnalyzePsychometricCurvesMultiSessionAlternating(csvPaths, 'OutDir', outDir, ...
+    'TrajectoryDir', trajectoryDir);
 
 fprintf('\n=======================================================\n');
 fprintf('Done. Combined "alternate" analysis of %d sessions saved to: %s\n', nFiles, outDir);

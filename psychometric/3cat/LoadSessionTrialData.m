@@ -1,4 +1,4 @@
-function S = LoadSessionTrialData(csvPath, useFirstAttemptOnly, verbose)
+function S = LoadSessionTrialData(csvPath, useFirstAttemptOnly, verbose, chronometricSource)
 % LOADSESSIONTRIALDATA  Load + clean one trial_data_*.csv from
 % CenterOutTask.m into ready-to-fit trial-level vectors.
 %
@@ -13,8 +13,23 @@ function S = LoadSessionTrialData(csvPath, useFirstAttemptOnly, verbose)
 %   INPUT
 %     csvPath             : path to a trial_data_*.csv
 %     useFirstAttemptOnly : true/false -- see AnalyzePsychometricCurves.m's
-%                        
+%
 %     verbose              : true/false -- print load/exclusion summary
+%     chronometricSource   : 'TargetReached' (default) | 'Takeoff' -- which
+%                        time populates .timeToTargetFit / the chronometric
+%                        curve. 'TargetReached' is the original behavior:
+%                        target-onset -> cursor-enters-target (TotalTime_s,
+%                        or the era-resolved v2_2 reconstruction below).
+%                        'Takeoff' instead reads the TakeoffTime_s column
+%                        (target-onset -> movement takeoff, written live by
+%                        TrialTakeoff.m since its addition to
+%                        CenterOutTask.m; see BackfillTakeoffTime.m in
+%                        psychometric/alternate for sessions recorded before
+%                        that column existed). A session with no
+%                        TakeoffTime_s column under 'Takeoff' is treated
+%                        exactly like an unresolved timing schema -- see the
+%                        chronometric section below -- so callers pooling
+%                        several sessions do not need to special-case it.
 %
 %   OUTPUT (struct S)
 %     .xFit, .rankFit, .stimRankFit, .dirFit : trial-level vectors, ALREADY
@@ -26,6 +41,15 @@ function S = LoadSessionTrialData(csvPath, useFirstAttemptOnly, verbose)
 %     .nRowsRaw, .nRows, .nOmission, .nExcludedRetry, .nUnexpected : the
 %         same exclusion counters AnalyzePsychometricCurves.m reports
 %
+
+if nargin < 4 || isempty(chronometricSource)
+    chronometricSource = 'TargetReached';
+end
+if ~any(strcmpi(chronometricSource, {'TargetReached', 'Takeoff'}))
+    error('LoadSessionTrialData:badChronometricSource', ...
+        'chronometricSource must be ''TargetReached'' or ''Takeoff''; got ''%s''.', chronometricSource);
+end
+useTakeoff = strcmpi(chronometricSource, 'Takeoff');
 
 if ~exist(csvPath, 'file')
     error('LoadSessionTrialData:fileNotFound', 'CSV not found: %s', csvPath);
@@ -68,47 +92,74 @@ else
     dirChosen = repmat({''}, numel(barSize), 1);
 end
 
-% timeToTarget = target-onset -> cursor-enters-target. This is to check discrepancies in how the reactions times are being logged.
-if ~isempty(colTotal)
-    timingSchema = 'new';
-    [timeToTarget, ~] = toNumeric(T.raw{strcmp(T.colnames, colTotal)});
-    if ~isempty(colDecision) && ~isempty(colReact)
-        [decCheck, ~] = toNumeric(T.raw{strcmp(T.colnames, colDecision)});
-        [reactCheck, ~] = toNumeric(T.raw{strcmp(T.colnames, colReact)});
-        reconstructed = decCheck + reactCheck;
-        badCheck = ~isnan(timeToTarget) & ~isnan(reconstructed) & (abs(timeToTarget - reconstructed) > 0.01);
-        if any(badCheck)
-            warning('LoadSessionTrialData:timingCrossCheckFailed', ...
-                ['%s: %d row(s) where TotalTime_s does not match DecisionTime_s+ReactionTime_s ' ...
-                 '(difference > 0.01s) -- check the file, the "current" format assumption might ' ...
-                 'not apply.'], csvBase, nnz(badCheck));
-        end
-    end
-elseif ~isempty(colExec) && ~isempty(colReact)
-    timingSchema = 'old';
-    [timeToTarget, ~] = toNumeric(T.raw{strcmp(T.colnames, colReact)});
-    if ~isempty(colDecision)
-        [decCheck, ~] = toNumeric(T.raw{strcmp(T.colnames, colDecision)});
-        [execCheck, ~] = toNumeric(T.raw{strcmp(T.colnames, colExec)});
-        reconstructed = decCheck + execCheck;
-        badCheck = ~isnan(timeToTarget) & ~isnan(reconstructed) & (abs(timeToTarget - reconstructed) > 0.01);
-        if any(badCheck)
-            warning('LoadSessionTrialData:timingCrossCheckFailed', ...
-                ['%s: %d row(s) where ReactionTime_s (v2_2-era, = total) does not match ' ...
-                 'DecisionTime_s+ExecutionTime_s (difference > 0.01s) -- check the file, the ' ...
-                 '"v2_2" format assumption might not apply.'], csvBase, nnz(badCheck));
-        end
+% timeToTarget = the time the chronometric curve is built on. Two mutually
+% exclusive sources (chronometricSource above); 'unresolved' means the SAME
+% thing to every downstream caller regardless of which source was asked
+% for: this session is excluded from the chronometric curve, psychometric
+% fit unaffected.
+if useTakeoff
+    % target-onset -> movement takeoff (TrialTakeoff.m's 5%-of-peak-speed
+    % detection, written live since its addition to CenterOutTask.m, or
+    % backfilled offline for older sessions -- see BackfillTakeoffTime.m in
+    % psychometric/alternate). No era reconstruction: TakeoffTime_s never
+    % existed under another column name, so either it is here or it is not.
+    colTakeoff = resolveColumn(T.colnames, {'TakeoffTime_s'}, false, 'TakeoffTime_s');
+    if ~isempty(colTakeoff)
+        timingSchema = 'takeoff';
+        [timeToTarget, ~] = toNumeric(T.raw{strcmp(T.colnames, colTakeoff)});
+    else
+        timingSchema = 'unresolved';
+        timeToTarget = nan(numel(barSize), 1);
+        warning('LoadSessionTrialData:takeoffColumnMissing', ...
+            ['%s: chronometricSource=''Takeoff'' but this file has no TakeoffTime_s column -- ' ...
+             'run BackfillTakeoffTime.m on it first (psychometric/alternate), or record it with a ' ...
+             'CenterOutTask.m build that includes TrialTakeoff.m. Available columns: %s. The ' ...
+             'psychometric analysis is NOT affected; this session will be excluded from any ' ...
+             'chronometric curve that depends on this time.'], csvBase, strjoin(T.colnames, ', '));
     end
 else
-    timingSchema = 'unresolved';
-    timeToTarget = nan(numel(barSize), 1);
-    warning('LoadSessionTrialData:timingSchemaUnresolved', ...
-        ['%s: could not unambiguously determine the total-time column (target-onset -> the ' ...
-         'cursor enters the target). Expected "TotalTime_s" (current format) or ' ...
-         '"ExecutionTime_s"+"ReactionTime_s" together (v2_2-era format, where "ReactionTime_s" is ' ...
-         'ALREADY the total -- see the "POOLING WARNING" comment in CenterOutTask.m). Available ' ...
-         'columns: %s. The psychometric analysis is NOT affected; this session will be excluded ' ...
-         'from any chronometric curve that depends on this time.'], csvBase, strjoin(T.colnames, ', '));
+    % target-onset -> cursor-enters-target. This is to check discrepancies in how the reactions times are being logged.
+    if ~isempty(colTotal)
+        timingSchema = 'new';
+        [timeToTarget, ~] = toNumeric(T.raw{strcmp(T.colnames, colTotal)});
+        if ~isempty(colDecision) && ~isempty(colReact)
+            [decCheck, ~] = toNumeric(T.raw{strcmp(T.colnames, colDecision)});
+            [reactCheck, ~] = toNumeric(T.raw{strcmp(T.colnames, colReact)});
+            reconstructed = decCheck + reactCheck;
+            badCheck = ~isnan(timeToTarget) & ~isnan(reconstructed) & (abs(timeToTarget - reconstructed) > 0.01);
+            if any(badCheck)
+                warning('LoadSessionTrialData:timingCrossCheckFailed', ...
+                    ['%s: %d row(s) where TotalTime_s does not match DecisionTime_s+ReactionTime_s ' ...
+                     '(difference > 0.01s) -- check the file, the "current" format assumption might ' ...
+                     'not apply.'], csvBase, nnz(badCheck));
+            end
+        end
+    elseif ~isempty(colExec) && ~isempty(colReact)
+        timingSchema = 'old';
+        [timeToTarget, ~] = toNumeric(T.raw{strcmp(T.colnames, colReact)});
+        if ~isempty(colDecision)
+            [decCheck, ~] = toNumeric(T.raw{strcmp(T.colnames, colDecision)});
+            [execCheck, ~] = toNumeric(T.raw{strcmp(T.colnames, colExec)});
+            reconstructed = decCheck + execCheck;
+            badCheck = ~isnan(timeToTarget) & ~isnan(reconstructed) & (abs(timeToTarget - reconstructed) > 0.01);
+            if any(badCheck)
+                warning('LoadSessionTrialData:timingCrossCheckFailed', ...
+                    ['%s: %d row(s) where ReactionTime_s (v2_2-era, = total) does not match ' ...
+                     'DecisionTime_s+ExecutionTime_s (difference > 0.01s) -- check the file, the ' ...
+                     '"v2_2" format assumption might not apply.'], csvBase, nnz(badCheck));
+            end
+        end
+    else
+        timingSchema = 'unresolved';
+        timeToTarget = nan(numel(barSize), 1);
+        warning('LoadSessionTrialData:timingSchemaUnresolved', ...
+            ['%s: could not unambiguously determine the total-time column (target-onset -> the ' ...
+             'cursor enters the target). Expected "TotalTime_s" (current format) or ' ...
+             '"ExecutionTime_s"+"ReactionTime_s" together (v2_2-era format, where "ReactionTime_s" is ' ...
+             'ALREADY the total -- see the "POOLING WARNING" comment in CenterOutTask.m). Available ' ...
+             'columns: %s. The psychometric analysis is NOT affected; this session will be excluded ' ...
+             'from any chronometric curve that depends on this time.'], csvBase, strjoin(T.colnames, ', '));
+    end
 end
 
 if nBadBarSize > 0
@@ -258,6 +309,7 @@ S.nUnexpected = nUnexpected;
 S.timeToTargetFit = timeToTargetFit;
 S.isCorrectFit = isCorrect(useRow);
 S.timingSchema = timingSchema;
+S.chronometricSource = chronometricSource;
 end
 
 % =========================================================================
