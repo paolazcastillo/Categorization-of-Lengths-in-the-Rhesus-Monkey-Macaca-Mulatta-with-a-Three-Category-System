@@ -22,11 +22,12 @@ function results = AnalyzePsychometricCurvesAlternating(csvPath, varargin)
 % ordinal-boundary model is only defined for a fixed category count, so the
 % 2-cat blocks and 3-cat blocks must be fit separately regardless.
 %
-% 'ChronometricTimeSource'='Takeoff' is always forwarded to
-% AnalyzePsychometricCurves.m (not one of this function's own options): any
-% chronometric curve built off this session's data -- here or later, by
-% whatever pools it -- is target-onset -> movement takeoff, not
-% target-onset -> target-reached. See BackfillTakeoffTime.m.
+% 'ChronometricTimeSource'={'Takeoff','TakeoffToTarget'} is always forwarded
+% to AnalyzePsychometricCurves.m (not one of this function's own options):
+% any chronometric curve built off this session's data -- here or later, by
+% whatever pools it -- is target-onset -> movement takeoff AND (separately)
+% movement takeoff -> target-reached, never the original target-onset ->
+% target-reached. See BackfillTakeoffTime.m.
 %
 % NO STATISTICS/OPTIMIZATION TOOLBOX IS USED (inherited from
 % AnalyzePsychometricCurves.m: fminsearch + erf/erfinv only).
@@ -121,17 +122,18 @@ vprintf(verbose, '\n======= AnalyzePsychometricCurvesAlternating: %s =======\n',
 % Options forwarded to AnalyzePsychometricCurves.m for both halves (all of
 % opt except OutDir, which is set per-half below).
 %
-% ChronometricTimeSource is hardcoded to 'Takeoff' here (not exposed as one
-% of THIS function's own options): the chronometric curve for "alternate"
-% sessions is target-onset -> movement takeoff, full stop, not a choice made
-% per call. See BackfillTakeoffTime below for why every alternate session
-% can support it even though none of them were recorded with a
-% TakeoffTime_s column.
+% ChronometricTimeSource is hardcoded to {'Takeoff', 'TakeoffToTarget'} here
+% (not exposed as one of THIS function's own options): the chronometric
+% curves for "alternate" sessions are target-onset -> movement takeoff AND
+% movement takeoff -> target-reached, full stop, not a choice made per
+% call. See BackfillTakeoffTime below for why every alternate session can
+% support both even though none of them were recorded with a TakeoffTime_s
+% column.
 fwd = {'UseFirstAttemptOnly', opt.UseFirstAttemptOnly, 'LinkFunction', opt.LinkFunction, ...
     'UseLapseRates', opt.UseLapseRates, 'LapseMax', opt.LapseMax, 'NBootstrap', opt.NBootstrap, ...
     'BootstrapAlpha', opt.BootstrapAlpha, 'MakePlots', opt.MakePlots, 'FigureVisible', opt.FigureVisible, ...
     'FitOrdinalModel', opt.FitOrdinalModel, 'Verbose', opt.Verbose, ...
-    'ChronometricTimeSource', 'Takeoff'};
+    'ChronometricTimeSource', {'Takeoff', 'TakeoffToTarget'}};
 
 % ===========================================================================
 % BACKFILL TakeoffTime_s (no-op if the file already has it), THEN

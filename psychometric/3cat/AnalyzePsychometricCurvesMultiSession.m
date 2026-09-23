@@ -65,20 +65,12 @@ addParameter(p, 'RunPerSessionComparison', true, @(x) islogical(x) || isnumeric(
 addParameter(p, 'PerSessionMakePlots', false, @(x) islogical(x) || isnumeric(x));
 addParameter(p, 'MakeComparisonPlots', false, @(x) islogical(x) || isnumeric(x));
 addParameter(p, 'PerSessionOutDir', '', @(s) ischar(s) || (isstring(s) && isscalar(s)));
-% 'TargetReached' (default) = target-onset -> cursor-enters-target, this
-% function's original chronometric definition. 'Takeoff' = target-onset ->
-% movement takeoff (TakeoffTime_s), for sessions where it exists or has
-% been backfilled -- see LoadSessionTrialData.m and, for older sessions,
-% BackfillTakeoffTime.m (psychometric/alternate). Forwarded to
-% LoadSessionTrialData.m per session below; also relabels the chronometric
-% curve's definition/axis/CSV header so the two definitions are never
-% silently conflated.
-addParameter(p, 'ChronometricTimeSource', 'TargetReached', ...
-    @(s) any(strcmpi(s, {'TargetReached', 'Takeoff'})));
+addParameter(p, 'ChronometricTimeSource', 'TargetReached', @(s) ischar(s) || iscell(s) || isstring(s));
 parse(p, csvPaths, varargin{:});
 opt = p.Results;
 link = lower(opt.LinkFunction);
 verbose = logical(opt.Verbose);
+chronoSources = cellstr(opt.ChronometricTimeSource);
 
 % Normalize csvPaths to a cell array of char row vectors: tolerates a
 % single path (char/string), a cell array of char, or a string array (the
@@ -128,7 +120,7 @@ vprintf(verbose, '\n======= AnalyzePsychometricCurvesMultiSession: %d sessions =
 S = cell(1, nSessions);
 for i = 1:nSessions
     vprintf(verbose, '\n--- Loading session %d/%d ---\n', i, nSessions);
-    S{i} = LoadSessionTrialData(csvPaths{i}, logical(opt.UseFirstAttemptOnly), verbose, opt.ChronometricTimeSource);
+    S{i} = LoadSessionTrialData(csvPaths{i}, logical(opt.UseFirstAttemptOnly), verbose, chronoSources);
 end
 
 % ===========================================================================
@@ -186,47 +178,7 @@ if nSessions < 5
          'regardless of NBootstrap.'], nSessions, nSessions, nSessions);
 end
 
-% ===========================================================================
-% POOL CHRONOMETRIC DATA (target-onset -> cursor-entra-al-target).
-% If a trial is excluded due to inexisting reaction times it's exluded
-% ONLY here, but still contributes to the psychometric curve.
-% ===========================================================================
-chronoSessionMask = false(1, nSessions);
-for i = 1:nSessions
-    chronoSessionMask(i) = ~strcmp(S{i}.timingSchema, 'unresolved');
-end
-chronoSessionList = find(chronoSessionMask);
-nSessionsChrono = numel(chronoSessionList);
-chronoExcludedNames = {};
-if nSessionsChrono < nSessions
-    excluded = S(~chronoSessionMask);
-    chronoExcludedNames = cellfun(@(s) s.csvBase, excluded, 'UniformOutput', false);
-    warning('AnalyzePsychometricCurvesMultiSession:chronoSessionsExcluded', ...
-        ['%d of %d session(s) excluded from the combined chronometric curve due to unresolved ' ...
-         'timing schema: %s (see LoadSessionTrialData warnings above). The rest of the analysis ' ...
-         '(psychometric curves) is NOT affected.'], ...
-        nSessions - nSessionsChrono, nSessions, strjoin(chronoExcludedNames, ', '));
-end
-
-xChronoAll = []; timeToTargetAll = []; isCorrectChronoAll = []; sessionIdxChronoAll = [];
-for k = 1:nSessionsChrono
-    i = chronoSessionList(k);
-    ni = numel(S{i}.xFit);
-    xChronoAll = [xChronoAll; S{i}.xFit(:)]; %#ok<AGROW>
-    timeToTargetAll = [timeToTargetAll; S{i}.timeToTargetFit(:)]; %#ok<AGROW>
-    isCorrectChronoAll = [isCorrectChronoAll; S{i}.isCorrectFit(:)]; %#ok<AGROW>
-    sessionIdxChronoAll = [sessionIdxChronoAll; repmat(k, ni, 1)]; %#ok<AGROW>
-end
-% Rows with a still-NaN timing value  are dropped here rather than propagated into
-% a mean.
-chronoValidRow = ~isnan(timeToTargetAll);
-xChronoAll = xChronoAll(chronoValidRow);
-timeToTargetAll = timeToTargetAll(chronoValidRow);
-isCorrectChronoAll = isCorrectChronoAll(chronoValidRow);
-sessionIdxChronoAll = sessionIdxChronoAll(chronoValidRow);
-
-% Conversion from seconds to miliseconds.
-timeToTargetAll = timeToTargetAll * 1000;
+% Chronometric pooling is performed per requested source in STEP 5 below.
 
 % ===========================================================================
 % STEP 1: FIT THE (nCat-1) ORDINAL BOUNDARIES ON THE POOLED DATA (point
@@ -361,6 +313,13 @@ for c = 1:nCat
     cc.xLevels = xLevels;  cc.k = k;  cc.n = n;  cc.propObs = k ./ n;
     cc.propWilsonLo = wLo;  cc.propWilsonHi = wHi;
     cc.xLevelTrueRank = xLevelTrueRank;
+    catBars = xLevels(xLevelTrueRank == c);
+    if isempty(catBars)
+        catBars = xLevels;
+    end
+    cc.stimLevels = catBars;
+    cc.stimMin = min(catBars);
+    cc.stimMax = max(catBars);
     cc.curveX = xGrid;  cc.curveY = Ppoint(:, c);
     cc.curveLo = jb.categoryLo{c};  cc.curveHi = jb.categoryHi{c};
     cc.nBootstrap = jb.nBoot;
@@ -535,7 +494,8 @@ if logical(opt.RunPerSessionComparison)
                 'FigureVisible', opt.FigureVisible, ...
                 'FitOrdinalModel', opt.FitOrdinalModel, ...
                 'OutDir', perSessionOutDir, ...
-                'Verbose', verbose);
+                'Verbose', verbose, ...
+                'ChronometricTimeSource', opt.ChronometricTimeSource);
             sessionResultsFull{i} = r;
             comparisonRows = [comparisonRows, buildComparisonRow(r, i, S{i}.csvBase, nCat)]; %#ok<AGROW>
         catch ME_sess
@@ -549,76 +509,133 @@ else
 end
 
 % ===========================================================================
-% CHRONOMETRIC CURVES (POOLED) -- target-onset -> cursor-enters-target
-% vs. bar length, correct vs. error trials kept separate. Same statistical methods as the
-% psychometric curves above and for the SAME reason: RT is also nested
-% within session, so the CI here
-% reuses the session-cluster bootstrap, not a naive per-bin SD/SEM computed
-% straight off the pooled trials to avoid pseudoreplication.
-
+% CHRONOMETRIC CURVES (POOLED) -- supports multiple sources (e.g.
+% 'Takeoff' and 'TakeoffToTarget').
+% Correct vs. error trials kept separate. Uses session-cluster bootstrap CI.
 % ===========================================================================
-chronometric = struct('available', false, 'note', '');
-try
-    if nSessionsChrono < 1
-        chronometric.note = 'No session has a resolved timing schema -- chronometric curve not generated.';
-    elseif isempty(xChronoAll)
-        chronometric.note = 'Timing schema resolved in at least 1 session, but 0 rows with valid timing -- chronometric curve not generated.';
+chronoResults = cell(1, numel(chronoSources));
+for si = 1:numel(chronoSources)
+    srcName = chronoSources{si};
+    if strcmpi(srcName, 'Takeoff')
+        srcDef = ['target-onset -> movement takeoff (TakeoffTime_s, ' ...
+            'TrialTakeoff.m''s 5%-of-peak-speed detection; see LoadSessionTrialData.m and, for ' ...
+            'sessions recorded before that column existed, BackfillTakeoffTime.m), reported in MILLISECONDS'];
+        srcLabel = 'Tiempo de reacción (ms)';
+        srcFileSuffix = '_chronometric_takeoff_pooled';
+        srcTitleName = 'Tiempo de reacción';
+    elseif strcmpi(srcName, 'TakeoffToTarget')
+        srcDef = ['movement takeoff -> target reached (TotalTime_s - TakeoffTime_s), reported in MILLISECONDS'];
+        srcLabel = 'Tiempo de movimiento (ms)';
+        srcFileSuffix = '_chronometric_takeofftotarget_pooled';
+        srcTitleName = 'Tiempo de movimiento';
     else
-        xLevelsChrono = unique(xChronoAll);
-        nLevelsChrono = numel(xLevelsChrono);
-        meanTimeCorrect = nan(nLevelsChrono, 1);  nCorrect = zeros(nLevelsChrono, 1);
-        meanTimeError   = nan(nLevelsChrono, 1);  nError   = zeros(nLevelsChrono, 1);
-        for iLev = 1:nLevelsChrono
-            rowsLev = (xChronoAll == xLevelsChrono(iLev));
-            rowsC = rowsLev & (isCorrectChronoAll == 1);
-            rowsE = rowsLev & (isCorrectChronoAll == 0);
-            nCorrect(iLev) = nnz(rowsC);
-            nError(iLev)   = nnz(rowsE);
-            if nCorrect(iLev) > 0, meanTimeCorrect(iLev) = mean(timeToTargetAll(rowsC)); end
-            if nError(iLev)   > 0, meanTimeError(iLev)   = mean(timeToTargetAll(rowsE)); end
-        end
-
-        if opt.NBootstrap > 0
-            [ciCorrect, ciError] = chronometricSessionClusterBootstrap(xLevelsChrono, xChronoAll, ...
-                timeToTargetAll, isCorrectChronoAll, sessionIdxChronoAll, nSessionsChrono, ...
-                opt.NBootstrap, opt.BootstrapAlpha);
+        srcDef = ['target-onset -> cursor enters target (DecisionTime_s + ' ...
+            'ReactionTime_s in current rig terminology; see LoadSessionTrialData.m for era-aware ' ...
+            'column resolution), reported in MILLISECONDS'];
+        srcLabel = 'Tiempo objetivo-cursor en el blanco (ms)';
+        if numel(chronoSources) == 1
+            srcFileSuffix = '_chronometric_pooled';
         else
-            ciCorrect = nan(nLevelsChrono, 2);
-            ciError   = nan(nLevelsChrono, 2);
+            srcFileSuffix = ['_chronometric_' lower(srcName) '_pooled'];
         end
+        srcTitleName = 'Objetivo -> cursor en el blanco';
+    end
 
-        chronometric.available = true;
-        if strcmpi(opt.ChronometricTimeSource, 'Takeoff')
-            chronometric.timeDefinition = ['target-onset -> movement takeoff (TakeoffTime_s, ' ...
-                'TrialTakeoff.m''s 5%-of-peak-speed detection; see LoadSessionTrialData.m and, for ' ...
-                'sessions recorded before that column existed, BackfillTakeoffTime.m), reported in MILLISECONDS'];
-            chronometric.timeLabel = 'Target-onset -> movement-takeoff time (ms)';
-        else
-            chronometric.timeDefinition = ['target-onset -> cursor enters target (DecisionTime_s + ' ...
-                'ReactionTime_s in current rig terminology; see LoadSessionTrialData.m for era-aware ' ...
-                'column resolution), reported in MILLISECONDS'];
-            chronometric.timeLabel = 'Target-onset -> cursor-in-target time (ms)';
-        end
-        chronometric.timeUnits = 'ms';
-        chronometric.xLevels = xLevelsChrono;
-        chronometric.meanTimeCorrect = meanTimeCorrect;  chronometric.ciCorrect = ciCorrect;  chronometric.nCorrect = nCorrect;
-        chronometric.meanTimeError   = meanTimeError;    chronometric.ciError   = ciError;    chronometric.nError   = nError;
-        chronometric.nSessionsChrono = nSessionsChrono;
-        chronometric.excludedSessions = chronoExcludedNames;
-        chronometric.nBootstrap = opt.NBootstrap;
-
-        vprintf(verbose, ['\n--- Chronometric curve (POOLED, %d of %d sessions) ---\n' ...
-            '  Definition: %s\n'], nSessionsChrono, nSessions, chronometric.timeDefinition);
-        for iLev = 1:nLevelsChrono
-            vprintf(verbose, '  %.3f deg VA:  correct N=%3d mean=%7.1fms 95%%CI[%.1f,%.1f]   error N=%3d mean=%7.1fms 95%%CI[%.1f,%.1f]\n', ...
-                xLevelsChrono(iLev), nCorrect(iLev), meanTimeCorrect(iLev), ciCorrect(iLev,1), ciCorrect(iLev,2), ...
-                nError(iLev), meanTimeError(iLev), ciError(iLev,1), ciError(iLev,2));
+    chronoSessionMask = false(1, nSessions);
+    for i = 1:nSessions
+        if isfield(S{i}, 'chrono') && isfield(S{i}.chrono, srcName)
+            chronoSessionMask(i) = ~strcmp(S{i}.chrono.(srcName).timingSchema, 'unresolved');
+        elseif isfield(S{i}, 'timingSchema')
+            chronoSessionMask(i) = ~strcmp(S{i}.timingSchema, 'unresolved');
         end
     end
-catch ME_chrono
-    chronometric = struct('available', false, ...
-        'note', sprintf('Chronometric curve computation failed: %s', ME_chrono.message));
-    warning('AnalyzePsychometricCurvesMultiSession:chronometricFailed', '%s', chronometric.note);
+    chronoSessionList = find(chronoSessionMask);
+    nSessionsChrono = numel(chronoSessionList);
+    chronoExcludedNames = {};
+    if nSessionsChrono < nSessions
+        excluded = S(~chronoSessionMask);
+        chronoExcludedNames = cellfun(@(s) s.csvBase, excluded, 'UniformOutput', false);
+        warning('AnalyzePsychometricCurvesMultiSession:chronoSessionsExcluded', ...
+            ['%d of %d session(s) excluded from the combined %s chronometric curve due to unresolved ' ...
+             'timing schema: %s. The rest of the analysis is NOT affected.'], ...
+            nSessions - nSessionsChrono, nSessions, srcName, strjoin(chronoExcludedNames, ', '));
+    end
+
+    xChronoAll = []; timeChronoAll = []; isCorrectChronoAll = []; sessionIdxChronoAll = [];
+    for k = 1:nSessionsChrono
+        i = chronoSessionList(k);
+        ni = numel(S{i}.xFit);
+        xChronoAll = [xChronoAll; S{i}.xFit(:)]; %#ok<AGROW>
+        if isfield(S{i}, 'chrono') && isfield(S{i}.chrono, srcName)
+            timeChronoAll = [timeChronoAll; S{i}.chrono.(srcName).timeToTargetFit(:)]; %#ok<AGROW>
+        else
+            timeChronoAll = [timeChronoAll; S{i}.timeToTargetFit(:)]; %#ok<AGROW>
+        end
+        isCorrectChronoAll = [isCorrectChronoAll; S{i}.isCorrectFit(:)]; %#ok<AGROW>
+        sessionIdxChronoAll = [sessionIdxChronoAll; repmat(k, ni, 1)]; %#ok<AGROW>
+    end
+    chronoValidRow = ~isnan(timeChronoAll);
+    xChronoAll = xChronoAll(chronoValidRow);
+    timeChronoAll = timeChronoAll(chronoValidRow);
+    isCorrectChronoAll = isCorrectChronoAll(chronoValidRow);
+    sessionIdxChronoAll = sessionIdxChronoAll(chronoValidRow);
+    timeChronoAll = timeChronoAll * 1000; % Convert seconds to ms
+
+    chronometric = struct('available', false, 'note', '', 'sourceName', srcName, ...
+        'timeLabel', srcLabel, 'fileSuffix', srcFileSuffix, 'titleName', srcTitleName);
+    try
+        if nSessionsChrono < 1
+            chronometric.note = sprintf('No session has a resolved timing schema for %s -- chronometric curve not generated.', srcName);
+        elseif isempty(xChronoAll)
+            chronometric.note = sprintf('Timing schema resolved in at least 1 session for %s, but 0 rows with valid timing -- chronometric curve not generated.', srcName);
+        else
+            xLevelsChrono = unique(xChronoAll);
+            nLevelsChrono = numel(xLevelsChrono);
+            meanTimeCorrect = nan(nLevelsChrono, 1);  nCorrect = zeros(nLevelsChrono, 1);
+            meanTimeError   = nan(nLevelsChrono, 1);  nError   = zeros(nLevelsChrono, 1);
+            for iLev = 1:nLevelsChrono
+                rowsLev = (xChronoAll == xLevelsChrono(iLev));
+                rowsC = rowsLev & (isCorrectChronoAll == 1);
+                rowsE = rowsLev & (isCorrectChronoAll == 0);
+                nCorrect(iLev) = nnz(rowsC);
+                nError(iLev)   = nnz(rowsE);
+                if nCorrect(iLev) > 0, meanTimeCorrect(iLev) = mean(timeChronoAll(rowsC)); end
+                if nError(iLev)   > 0, meanTimeError(iLev)   = mean(timeChronoAll(rowsE)); end
+            end
+
+            if opt.NBootstrap > 0
+                [ciCorrect, ciError] = chronometricSessionClusterBootstrap(xLevelsChrono, xChronoAll, ...
+                    timeChronoAll, isCorrectChronoAll, sessionIdxChronoAll, nSessionsChrono, ...
+                    opt.NBootstrap, opt.BootstrapAlpha);
+            else
+                ciCorrect = nan(nLevelsChrono, 2);
+                ciError   = nan(nLevelsChrono, 2);
+            end
+
+            chronometric.available = true;
+            chronometric.timeDefinition = srcDef;
+            chronometric.timeUnits = 'ms';
+            chronometric.xLevels = xLevelsChrono;
+            chronometric.meanTimeCorrect = meanTimeCorrect;  chronometric.ciCorrect = ciCorrect;  chronometric.nCorrect = nCorrect;
+            chronometric.meanTimeError   = meanTimeError;    chronometric.ciError   = ciError;    chronometric.nError   = nError;
+            chronometric.nSessionsChrono = nSessionsChrono;
+            chronometric.excludedSessions = chronoExcludedNames;
+            chronometric.nBootstrap = opt.NBootstrap;
+
+            vprintf(verbose, ['\n--- Chronometric curve [%s] (POOLED, %d of %d sessions) ---\n' ...
+                '  Definition: %s\n'], srcName, nSessionsChrono, nSessions, chronometric.timeDefinition);
+            for iLev = 1:nLevelsChrono
+                vprintf(verbose, '  %.3f deg VA:  correct N=%3d mean=%7.1fms 95%%CI[%.1f,%.1f]   error N=%3d mean=%7.1fms 95%%CI[%.1f,%.1f]\n', ...
+                    xLevelsChrono(iLev), nCorrect(iLev), meanTimeCorrect(iLev), ciCorrect(iLev,1), ciCorrect(iLev,2), ...
+                    nError(iLev), meanTimeError(iLev), ciError(iLev,1), ciError(iLev,2));
+            end
+        end
+    catch ME_chrono
+        chronometric.available = false;
+        chronometric.note = sprintf('Chronometric curve [%s] computation failed: %s', srcName, ME_chrono.message);
+        warning('AnalyzePsychometricCurvesMultiSession:chronometricFailed', '%s', chronometric.note);
+    end
+    chronoResults{si} = chronometric;
 end
 
 % ===========================================================================
@@ -638,7 +655,11 @@ results.category = category;
 results.ordinalModel = ordinalModel;
 results.perSessionComparison = comparisonRows;
 results.perSessionFullResults = sessionResultsFull;
-results.chronometric = chronometric;
+results.chronometric = chronoResults{1};
+results.chronometrics = struct();
+for si = 1:numel(chronoSources)
+    results.chronometrics.(chronoSources{si}) = chronoResults{si};
+end
 
 matFile = fullfile(outDir, [poolBase '_psychometric_pooled.mat']);
 save(matFile, 'results');
@@ -662,10 +683,16 @@ compareFile = fullfile(outDir, [poolBase '_compare_sessions.csv']);
 writeSessionComparisonCsv(compareFile, comparisonRows, groupNames, nCat);
 vprintf(verbose, 'Saved: %s\n', compareFile);
 
-if chronometric.available
-    chronoFile = fullfile(outDir, [poolBase '_chronometric_pooled_summary.csv']);
-    writeChronometricSummaryCsv(chronoFile, chronometric, nSessions);
-    vprintf(verbose, 'Saved: %s\n', chronoFile);
+for si = 1:numel(chronoSources)
+    ch = chronoResults{si};
+    if ch.available
+        chronoFile = fullfile(outDir, sprintf('%s%s_summary.csv', poolBase, ch.fileSuffix));
+        writeChronometricSummaryCsv(chronoFile, ch, nSessions);
+        vprintf(verbose, 'Saved: %s\n', chronoFile);
+        if si == 1 && ~strcmp(ch.fileSuffix, '_chronometric_pooled')
+            copyfile(chronoFile, fullfile(outDir, [poolBase '_chronometric_pooled_summary.csv']));
+        end
+    end
 end
 
 if logical(opt.MakePlots)
@@ -676,13 +703,21 @@ if logical(opt.MakePlots)
         warning('AnalyzePsychometricCurvesMultiSession:plotFailed', ...
             'Could not generate pooled figures (%s): %s', ME_plot.identifier, ME_plot.message);
     end
-    if chronometric.available
-        try
-            makeChronometricPlot(chronometric, outDir, poolBase, logical(opt.FigureVisible), nSessions);
-            vprintf(verbose, 'Chronometric figure saved to: %s\n', outDir);
-        catch ME_plotChrono
-            warning('AnalyzePsychometricCurvesMultiSession:chronometricPlotFailed', ...
-                'Could not generate chronometric figure (%s): %s', ME_plotChrono.identifier, ME_plotChrono.message);
+    for si = 1:numel(chronoSources)
+        ch = chronoResults{si};
+        if ch.available
+            try
+                makeChronometricPlot(ch, category, outDir, poolBase, logical(opt.FigureVisible), nSessions, ch.fileSuffix);
+                vprintf(verbose, 'Chronometric figure [%s] saved to: %s\n', chronoSources{si}, outDir);
+                if si == 1 && ~strcmp(ch.fileSuffix, '_chronometric_pooled')
+                    srcPlot = fullfile(outDir, sprintf('%s%s.png', poolBase, ch.fileSuffix));
+                    dstPlot = fullfile(outDir, sprintf('%s_chronometric_pooled.png', poolBase));
+                    if exist(srcPlot, 'file'), copyfile(srcPlot, dstPlot); end
+                end
+            catch ME_plotChrono
+                warning('AnalyzePsychometricCurvesMultiSession:chronometricPlotFailed', ...
+                    'Could not generate chronometric figure for %s (%s): %s', chronoSources{si}, ME_plotChrono.identifier, ME_plotChrono.message);
+            end
         end
     end
 end
@@ -1225,17 +1260,31 @@ end
 fclose(fid);
 end
 
-function makeChronometricPlot(chrono, outDir, poolBase, figVisible, nSessions)
-% One figure: mean chronometric time (chrono.timeLabel -- target-onset ->
-% cursor-in-target, or -> movement takeoff, per ChronometricTimeSource)
+function makeChronometricPlot(chrono, category, outDir, poolBase, figVisible, nSessions, fileSuffix)
+% One figure: mean chronometric time (target-onset -> movement takeoff, or -> cursor-in-target)
 % vs. bar length, correct trials vs. error trials as two separate series, each with its session-cluster-bootstrap
 % IC95% band.
+if nargin < 7 || isempty(fileSuffix)
+    if isfield(chrono, 'fileSuffix') && ~isempty(chrono.fileSuffix)
+        fileSuffix = chrono.fileSuffix;
+    else
+        fileSuffix = '_chronometric_pooled';
+    end
+end
+if ischar(category) || isstring(category)
+    % Backwards compatibility if called with old 5 arguments: (chrono, outDir, poolBase, figVisible, nSessions)
+    nSessions = figVisible;
+    figVisible = poolBase;
+    poolBase = outDir;
+    outDir = category;
+    category = [];
+end
 if figVisible, visStr = 'on'; else, visStr = 'off'; end
 x = chrono.xLevels;
-fig = figure('Visible', visStr, 'Position', [100 100 720 480]);
+fig = figure('Visible', visStr, 'Position', [100 100 880 600]);
 hold on;
-colCorrect = [0.10 0.45 0.75];
-colError   = [0.80 0.25 0.15];
+colCorrect = [0.05 0.05 0.05];   % neutral, strong tone for correct trials
+colError   = [0.65 0.65 0.65];   % neutral, grayish tone for error trials
 legendH = [];  legendLabels = {};
 
 hasC = ~all(isnan(chrono.meanTimeCorrect));
@@ -1259,32 +1308,49 @@ if hasE && ~all(isnan(chrono.ciError(:)))
 end
 if hasC
     hC = plot(x, chrono.meanTimeCorrect, '-o', 'Color', colCorrect, ...
-        'MarkerFaceColor', colCorrect, 'MarkerEdgeColor', 'k', 'LineWidth', 2, 'MarkerSize', 6);
+        'MarkerFaceColor', colCorrect, 'MarkerEdgeColor', 'k', 'LineWidth', 2.8, 'MarkerSize', 8);
     legendH = [legendH, hC];  legendLabels{end+1} = sprintf('correcto (N=%d)', sum(chrono.nCorrect));
 end
 if hasE
     hE = plot(x, chrono.meanTimeError, '--s', 'Color', colError, ...
-        'MarkerFaceColor', colError, 'MarkerEdgeColor', 'k', 'LineWidth', 2, 'MarkerSize', 6);
+        'MarkerFaceColor', colError, 'MarkerEdgeColor', 'k', 'LineWidth', 2.8, 'MarkerSize', 8);
     legendH = [legendH, hE];  legendLabels{end+1} = sprintf('error (N=%d)', sum(chrono.nError));
 end
-xlabel('Bar length (deg VA)');
+xlabel('Longitud de la barra (grados AV)', 'FontSize', 18, 'FontWeight', 'bold');
 if isfield(chrono, 'timeLabel') && ~isempty(chrono.timeLabel)
-    ylabel(chrono.timeLabel);
+    ylabel(chrono.timeLabel, 'FontSize', 18, 'FontWeight', 'bold');
 else
-    ylabel('Target-onset -> cursor-in-target time (ms)');
+    ylabel('Tiempo objetivo-cursor en el blanco (ms)', 'FontSize', 18, 'FontWeight', 'bold');
 end
-title(sprintf('Pooled chronometric curve (%d of %d sessions) -- 95%% cluster-bootstrap CI per session', ...
-    chrono.nSessionsChrono, nSessions), 'Interpreter', 'none');
-grid on; box on;
+nTrialsChrono = sum(chrono.nCorrect) + sum(chrono.nError);
+ttl = sprintf('Sesiones: %d  |  Ensayos: %d', chrono.nSessionsChrono, nTrialsChrono);
+title(ttl, 'Interpreter', 'none', 'FontSize', 20, 'FontWeight', 'bold');
+set(gca, 'FontSize', 18, 'LineWidth', 1.2);
+% Movement time (Takeoff -> target-reached) gets 400 ms ticks; reaction
+% time (target-onset -> Takeoff) and any other/default time source keep
+% the finer 200 ms ticks.
+if isfield(chrono, 'sourceName') && strcmpi(chrono.sourceName, 'TakeoffToTarget')
+    yTickStep = 400;
+else
+    yTickStep = 200;
+end
+yl = ylim;
+set(gca, 'YTick', (floor(yl(1) / yTickStep) * yTickStep):yTickStep:(ceil(yl(2) / yTickStep) * yTickStep));
+grid off; box on;
 if ~isempty(legendH)
-    legend(legendH, legendLabels, 'Location', 'best');
+    hLeg = legend(legendH, legendLabels, 'Location', 'north', 'FontSize', 18);
+    set(hLeg, 'Box', 'off', 'Color', 'none');
 end
-outFile = fullfile(outDir, sprintf('%s_chronometric_pooled.png', poolBase));
+if ~isempty(category)
+    addCategoryShades(gca, category, defaultCategoryColors(numel(category)), 0.12);
+end
+outFile = fullfile(outDir, sprintf('%s%s.png', poolBase, fileSuffix));
 try
-    print(fig, outFile, '-dpng', '-r150');
+    print(fig, outFile, '-dpng', '-r300');
 catch
     saveas(fig, outFile);
 end
+saveFigureAlsoAsVector(fig, outFile);
 if ~figVisible, close(fig); end
 end
 
@@ -1356,9 +1422,9 @@ fclose(fid);
 end
 
 function colors = defaultCategoryColors(nCat)
-orange = [1.00 0.647 0.00];
-green  = [0.00 0.70 0.00];
-blue   = [0.00 0.00 1.00];
+orange = [1.00 0.55 0.00];
+green  = [0.10 0.75 0.20];
+blue   = [0.05 0.45 0.95];
 switch nCat
     case 2
         colors = [orange; blue];
@@ -1380,21 +1446,25 @@ colors = defaultCategoryColors(nCat);
 chanceLevel = 1 / nCat;
 theoColor   = [0.0 0.45 0.7];   % teal-blue: theoretical/design elements
 obsPseColor = [0.85 0.1 0.1];   % red: observed PSE elements
+% A single-category (one curve per figure) plot does not need to carry a
+% category color on its fitted curve line -- black reads better on its
+% own. The category color scheme is reserved for the combined ("global")
+% overview figure below, where it is what distinguishes the curves from
+% each other.
+curveColorIndividual = [0 0 0];
 if figVisible, visStr = 'on'; else, visStr = 'off'; end
 
 for c = 1:nCat
     cc = category(c);
-    fig = figure('Visible', visStr, 'Position', [100 100 640 480]);
+    fig = figure('Visible', visStr, 'Position', [100 100 850 580]);
     hold on;
     legendH = [];  legendLabels = {};
     if ~isempty(cc.curveLo) && ~all(isnan(cc.curveLo))
         xFill = [cc.curveX; flipud(cc.curveX)];
         yFill = [cc.curveLo; flipud(cc.curveHi)];
-        hFill = fill(xFill, yFill, colors(c, :), 'EdgeColor', 'none', 'FaceAlpha', 0.25);
-        legendH = [legendH, hFill];  legendLabels{end+1} = '95% cluster-bootstrap CI';
+        fill(xFill, yFill, [0.5 0.5 0.5], 'EdgeColor', 'none', 'FaceAlpha', 0.25);
     end
-    hCurve = plot(cc.curveX, cc.curveY, '-', 'Color', colors(c, :) * 0.75, 'LineWidth', 2);
-    legendH = [legendH, hCurve];  legendLabels{end+1} = 'Fitted curve (pooled)';
+    plot(cc.curveX, cc.curveY, '-', 'Color', curveColorIndividual, 'LineWidth', 2.8);
     errLo = cc.propObs - cc.propWilsonLo;
     errHi = cc.propWilsonHi - cc.propObs;
     for g = 1:nCat
@@ -1402,132 +1472,131 @@ for c = 1:nCat
         if ~any(idxG), continue; end
         hEBg = errorbar(cc.xLevels(idxG), cc.propObs(idxG), errLo(idxG), errHi(idxG), 'o');
         set(hEBg, 'Color', colors(g, :) * 0.6, 'MarkerFaceColor', colors(g, :), ...
-            'MarkerEdgeColor', colors(g, :) * 0.6, 'MarkerSize', 6, 'LineWidth', 1.2);
-        legendH = [legendH, hEBg]; %#ok<AGROW>
-        legendLabels{end+1} = sprintf('Data: bar=%s (n=%d)', category(g).name, sum(cc.n(idxG))); %#ok<AGROW>
+            'MarkerEdgeColor', colors(g, :) * 0.6, 'MarkerSize', 8, 'LineWidth', 1.8);
     end
-    hChance = plot(xlim_safe2(cc.curveX), [chanceLevel chanceLevel], '--', ...
-        'Color', [0.6 0.6 0.6], 'LineWidth', 1);
-    legendH = [legendH, hChance];  legendLabels{end+1} = sprintf('Chance (1/%d = %.3f)', nCat, chanceLevel);
+    plot(xlim_safe2(cc.curveX), [chanceLevel chanceLevel], '--', ...
+        'Color', [0.6 0.6 0.6], 'LineWidth', 1.5);
     if strcmp(cc.summaryType, 'threshold')
         % --- Observed PSE (red) ---
-        hPseV = plot([cc.threshold cc.threshold], [0 0.5], ':', 'Color', obsPseColor, 'LineWidth', 1.3);
-        plot(xlim_safe2(cc.curveX), [0.5 0.5], ':', 'Color', obsPseColor, 'LineWidth', 1.3);
-        plot(cc.threshold, 0.5, 'p', 'MarkerSize', 10, 'MarkerFaceColor', obsPseColor, 'MarkerEdgeColor', 'k');
-        text(cc.threshold, 0.5 + 0.04, sprintf('PSE_{obs}\n%.3f', cc.threshold), ...
-            'Color', obsPseColor, 'FontSize', 8, 'FontWeight', 'bold', ...
-            'HorizontalAlignment', 'center', 'Interpreter', 'tex');
+        hPseV = plot([cc.threshold cc.threshold], [0 0.5], ':', 'Color', obsPseColor, 'LineWidth', 1.8);
+        plot([min(cc.curveX) cc.threshold], [0.5 0.5], ':', 'Color', obsPseColor, 'LineWidth', 1.8);
+        plot(cc.threshold, 0.5, 'p', 'MarkerSize', 11, 'MarkerFaceColor', obsPseColor, 'MarkerEdgeColor', 'k');
         legendH = [legendH, hPseV]; %#ok<AGROW>
-        legendLabels{end+1} = sprintf('PSE obs (50%%) = %.3f [%.3f, %.3f]', ...
-            cc.threshold, cc.thresholdCI(1), cc.thresholdCI(2));
+        legendLabels{end+1} = sprintf('PSE observado = %.3f', cc.threshold);
         % --- Theoretical PSE (teal) ---
         if ~isnan(cc.theoreticalThreshold)
             hTheoV = plot([cc.theoreticalThreshold cc.theoreticalThreshold], [0 0.5], '--', ...
-                'Color', theoColor, 'LineWidth', 1.3);
-            plot(cc.theoreticalThreshold, 0.5, 'd', 'MarkerSize', 9, ...
+                'Color', theoColor, 'LineWidth', 1.8);
+            plot(cc.theoreticalThreshold, 0.5, 'd', 'MarkerSize', 10, ...
                 'MarkerFaceColor', theoColor, 'MarkerEdgeColor', 'k');
-            text(cc.theoreticalThreshold, 0.5 - 0.09, sprintf('PSE_{theo}\n%.3f', cc.theoreticalThreshold), ...
-                'Color', theoColor, 'FontSize', 8, 'FontWeight', 'bold', ...
-                'HorizontalAlignment', 'center', 'Interpreter', 'tex');
             legendH = [legendH, hTheoV]; %#ok<AGROW>
-            legendLabels{end+1} = sprintf('PSE theo (design) = %.3f', cc.theoreticalThreshold);
+            legendLabels{end+1} = sprintf('PSE teórico = %.3f', cc.theoreticalThreshold);
         end
-        ttlLine1 = sprintf('%s vs. %s', cc.name, strjoin({category(setdiff(1:nCat, c)).name}, '+'));
-        ttlLine2 = sprintf('Sessions: %d  |  Trials: %d', nSessions, nTrialsUsed);
-        title({ttlLine1, ttlLine2}, 'Interpreter', 'none');
+        ttl = sprintf('Sesiones: %d  |  Ensayos: %d', nSessions, nTrialsUsed);
+        title(ttl, 'Interpreter', 'none', 'FontSize', 20, 'FontWeight', 'bold');
     else
         % --- Mid (interior) category: peak + teal theoretical boundaries only ---
-        plot([cc.peakX cc.peakX], [0 cc.peakY], ':', 'Color', [0.3 0.3 0.3]);
+        plot([cc.peakX cc.peakX], [0 cc.peakY], ':', 'Color', [0.3 0.3 0.3], 'LineWidth', 1.5);
         if ~isnan(cc.pseLowerTheoretical) && ~isnan(cc.pseUpperTheoretical)
             hTheoWidth = plot([cc.pseLowerTheoretical cc.pseLowerTheoretical ...
                                cc.pseUpperTheoretical cc.pseUpperTheoretical], [0 1 1 0], '--', ...
-                'Color', theoColor, 'LineWidth', 1.1);
+                'Color', theoColor, 'LineWidth', 1.8);
             hTheoWidth = hTheoWidth(1);
-            plot(cc.centerTheoretical, 0.02, 'v', 'MarkerSize', 8, ...
+            plot(cc.centerTheoretical, 0.02, 'v', 'MarkerSize', 10, ...
                 'MarkerFaceColor', theoColor, 'MarkerEdgeColor', 'k');
             legendH = [legendH, hTheoWidth]; %#ok<AGROW>
-            legendLabels{end+1} = sprintf('Theoretical bounds [%.3f, %.3f] (width=%.3f)', ...
-                cc.pseLowerTheoretical, cc.pseUpperTheoretical, cc.widthTheoretical);
+            legendLabels{end+1} = sprintf('PSE teórico = %.3f', cc.centerTheoretical);
         end
-        ttlLine1 = sprintf('%s vs. %s+%s', cc.name, category(1).name, category(nCat).name);
-        ttlLine2 = sprintf('Sessions: %d  |  Trials: %d', nSessions, nTrialsUsed);
-        title({ttlLine1, ttlLine2}, 'Interpreter', 'none');
+        ttl = sprintf('Sesiones: %d  |  Ensayos: %d', nSessions, nTrialsUsed);
+        title(ttl, 'Interpreter', 'none', 'FontSize', 20, 'FontWeight', 'bold');
     end
-    xlabel('Bar length (deg VA)');
-    ylabel(sprintf('P(response = %s)', cc.name));
+    xlabel('Longitud de la barra (grados AV)', 'FontSize', 18, 'FontWeight', 'bold');
+    ylabel(sprintf('P(respuesta = %s)', categoryNameEs(cc.name)), 'FontSize', 18, 'FontWeight', 'bold');
     ylim([-0.02 1.02]);
-    grid on; box on;
-    legend(legendH, legendLabels, 'Location', 'best');
+    set(gca, 'FontSize', 18, 'LineWidth', 1.2);
+    grid off; box on;
+    addCategoryShades(gca, category, colors, 0.12);
+    hLeg = legend(legendH, legendLabels, 'Location', 'north', 'FontSize', 18);
+    set(hLeg, 'Box', 'off', 'Color', 'none');
     outFile = fullfile(outDir, sprintf('%s_category_%s_%s.png', csvBase, cc.name, link));
     try
-        print(fig, outFile, '-dpng', '-r150');
+        print(fig, outFile, '-dpng', '-r300');
     catch
         saveas(fig, outFile);
     end
+    saveFigureAlsoAsVector(fig, outFile);
     if ~figVisible, close(fig); end
 end
 
 % --- Overview (graphic with ALL curves together) ---
-fig = figure('Visible', visStr, 'Position', [100 100 720 520]);
+% Only the 3-category "global" overview (all 3 one-vs-rest curves
+% together) keeps the category color scheme -- it is what distinguishes
+% the 3 curves from each other there. Any other curve count (e.g. the
+% 2-category case) uses a neutral grayscale ramp instead.
+if nCat == 3
+    curveColorsOverview = colors;
+else
+    curveColorsOverview = repmat(linspace(0, 0.55, nCat)', 1, 3);
+end
+fig = figure('Visible', visStr, 'Position', [100 100 880 600]);
 hold on;
-legendEntries = cell(1, nCat);
+legendH = [];  legendLabels = {};
 for c = 1:nCat
     cc = category(c);
-    plot(cc.curveX, cc.curveY, '-', 'Color', colors(c, :) * 0.75, 'LineWidth', 2.2);
+    plot(cc.curveX, cc.curveY, '-', 'Color', curveColorsOverview(c, :) * 0.75, 'LineWidth', 3.0);
     errLo = cc.propObs - cc.propWilsonLo;
     errHi = cc.propWilsonHi - cc.propObs;
     hEB = errorbar(cc.xLevels, cc.propObs, errLo, errHi, 'o');
-    set(hEB, 'Color', colors(c, :) * 0.75, 'MarkerFaceColor', colors(c, :), ...
-        'MarkerSize', 5, 'LineWidth', 1);
-    legendEntries{c} = cc.name;
+    set(hEB, 'Color', curveColorsOverview(c, :) * 0.75, 'MarkerFaceColor', curveColorsOverview(c, :), ...
+        'MarkerSize', 8, 'LineWidth', 1.8);
     if strcmp(cc.summaryType, 'threshold')
         % Observed PSE vertical line + star
-        plot([cc.threshold cc.threshold], [0 0.5], ':', 'Color', obsPseColor, 'LineWidth', 1.3);
-        plot(cc.threshold, 0.5, 'p', 'MarkerSize', 9, 'MarkerFaceColor', obsPseColor, 'MarkerEdgeColor', 'k');
-        text(cc.threshold, 0.5 + 0.04, sprintf('PSE_{obs}\n%.3f', cc.threshold), ...
-            'Color', obsPseColor, 'FontSize', 7.5, 'FontWeight', 'bold', ...
-            'HorizontalAlignment', 'center', 'Interpreter', 'tex');
+        plot([cc.threshold cc.threshold], [0 0.5], ':', 'Color', obsPseColor, 'LineWidth', 1.8);
+        plot([min(cc.curveX) cc.threshold], [0.5 0.5], ':', 'Color', obsPseColor, 'LineWidth', 1.8);
+        hPseC = plot(cc.threshold, 0.5, 'p', 'MarkerSize', 11, 'MarkerFaceColor', obsPseColor, 'MarkerEdgeColor', 'k');
+        legendH = [legendH, hPseC]; %#ok<AGROW>
+        legendLabels{end+1} = sprintf('PSE observado %s = %.3f', cc.name, cc.threshold); %#ok<AGROW>
         % Theoretical PSE vertical line + diamond
         if ~isnan(cc.theoreticalThreshold)
             plot([cc.theoreticalThreshold cc.theoreticalThreshold], [0 0.5], '--', ...
-                'Color', theoColor, 'LineWidth', 1.3);
-            plot(cc.theoreticalThreshold, 0.5, 'd', 'MarkerSize', 8, ...
+                'Color', theoColor, 'LineWidth', 1.8);
+            hPseTheoC = plot(cc.theoreticalThreshold, 0.5, 'd', 'MarkerSize', 10, ...
                 'MarkerFaceColor', theoColor, 'MarkerEdgeColor', 'k');
-            text(cc.theoreticalThreshold, 0.5 - 0.09, sprintf('PSE_{theo}\n%.3f', cc.theoreticalThreshold), ...
-                'Color', theoColor, 'FontSize', 7.5, 'FontWeight', 'bold', ...
-                'HorizontalAlignment', 'center', 'Interpreter', 'tex');
+            legendH = [legendH, hPseTheoC]; %#ok<AGROW>
+            legendLabels{end+1} = sprintf('PSE teórico %s = %.3f', cc.name, cc.theoreticalThreshold); %#ok<AGROW>
         end
     end
 end
-plot(xlim_safe2(category(1).curveX), [0.5 0.5], ':', 'Color', [0.5 0.5 0.5], 'LineWidth', 1);
-plot(xlim_safe2(category(1).curveX), [chanceLevel chanceLevel], '--', 'Color', [0.6 0.6 0.6], 'LineWidth', 1);
-text(category(1).curveX(end), 0.5, ' 50% (PSE)', 'Color', [0.4 0.4 0.4], 'VerticalAlignment', 'bottom');
-text(category(1).curveX(end), chanceLevel, sprintf(' Chance 1/%d', nCat), 'Color', [0.5 0.5 0.5], 'VerticalAlignment', 'top');
 % Teal theoretical boundaries for interior (Mid) categories
 for c = 1:nCat
     cc = category(c);
     if strcmp(cc.summaryType, 'peak') && ~isnan(cc.pseLowerTheoretical) && ~isnan(cc.pseUpperTheoretical)
-        plot([cc.pseLowerTheoretical cc.pseLowerTheoretical], [0 1], '--', 'Color', theoColor, 'LineWidth', 1);
-        plot([cc.pseUpperTheoretical cc.pseUpperTheoretical], [0 1], '--', 'Color', theoColor, 'LineWidth', 1);
-        plot(cc.centerTheoretical, 0.02, 'v', 'MarkerSize', 8, ...
-            'MarkerFaceColor', theoColor, 'MarkerEdgeColor', 'k');
+        plot([cc.pseLowerTheoretical cc.pseLowerTheoretical], [0 1], '--', 'Color', theoColor, 'LineWidth', 1.8);
+        plot([cc.pseUpperTheoretical cc.pseUpperTheoretical], [0 1], '--', 'Color', theoColor, 'LineWidth', 1.8);
     end
 end
-xlabel('Bar length (deg VA)');
-ylabel('P(response = category)');
-catNames = strjoin({category.name}, ' vs ');
-ttlLine1 = catNames;
-ttlLine2 = sprintf('Sessions: %d  |  Trials: %d', nSessions, nTrialsUsed);
-title({ttlLine1, ttlLine2}, 'Interpreter', 'none');
+xlabel('Longitud de la barra (grados AV)', 'FontSize', 18, 'FontWeight', 'bold');
+ylabel('P(respuesta = categoría)', 'FontSize', 18, 'FontWeight', 'bold');
+ttl = sprintf('Sesiones: %d  |  Ensayos: %d', nSessions, nTrialsUsed);
+title(ttl, 'Interpreter', 'none', 'FontSize', 20, 'FontWeight', 'bold');
 ylim([-0.02 1.02]);
-grid on; box on;
-legend(legendEntries, 'Location', 'best');
+set(gca, 'FontSize', 18, 'LineWidth', 1.2);
+grid off; box on;
+addCategoryShades(gca, category, colors, 0.12);
+if nCat == 3
+    legLoc = 'east';
+else
+    legLoc = 'north';
+end
+hLeg = legend(legendH, legendLabels, 'Location', legLoc, 'FontSize', 18);
+set(hLeg, 'Box', 'off', 'Color', 'none');
 outFile = fullfile(outDir, sprintf('%s_categories_overview_%s.png', csvBase, link));
 try
-    print(fig, outFile, '-dpng', '-r150');
+    print(fig, outFile, '-dpng', '-r300');
 catch
     saveas(fig, outFile);
 end
+saveFigureAlsoAsVector(fig, outFile);
 if ~figVisible, close(fig); end
 end
 
@@ -1570,22 +1639,111 @@ for b = 1:nBoundaries
     catch
         set(gca, 'XTick', sessX, 'XTickLabel', sessLabels);
     end
-    xlabel('Session');
-    ylabel(sprintf('Boundary %d PSE (deg VA)', b));
+    xlabel('Sesión', 'FontSize', 18, 'FontWeight', 'bold');
+    ylabel(sprintf('PSE frontera %d (grados AV)', b), 'FontSize', 18, 'FontWeight', 'bold');
+    set(gca, 'FontSize', 18, 'LineWidth', 1.2);
 
-    title(sprintf('Boundary %d: %s -- pooled %.3f [%.3f, %.3f] 95%% cluster-bootstrap CI (blue band) vs. each session (orange)', ...
-        b, boundaryFits(b).name, poolPSE, poolCI(1), poolCI(2)), 'Interpreter', 'none');
-    grid on; box on;
+    title(sprintf('Frontera %d: %s -- agrupado %.3f [%.3f, %.3f] IC 95%% bootstrap (banda azul) vs. cada sesión (naranja)', ...
+        b, boundaryFits(b).name, poolPSE, poolCI(1), poolCI(2)), 'Interpreter', 'none', 'FontSize', 20, 'FontWeight', 'bold');
+    grid off; box on;
     outFile = fullfile(outDir, sprintf('%s_compare_boundary%d_%s.png', poolBase, b, link));
     try
-        print(fig, outFile, '-dpng', '-r150');
+        print(fig, outFile, '-dpng', '-r300');
     catch
         saveas(fig, outFile);
     end
+    saveFigureAlsoAsVector(fig, outFile);
     if ~figVisible, close(fig); end
 end
 end
 
 function xr = xlim_safe2(x)
 xr = [min(x), max(x)];
+end
+
+function nameEs = categoryNameEs(nameEn)
+% Spanish label for the Y axis of a per-category psychometric curve
+% (e.g. "ShortGroup" -> "corto"). Falls back to the original name for
+% any group not in this table, so an unexpected category still plots.
+switch nameEn
+    case 'ShortGroup'
+        nameEs = 'corto';
+    case 'MidGroup'
+        nameEs = 'medio';
+    case 'LongGroup'
+        nameEs = 'largo';
+    otherwise
+        nameEs = nameEn;
+end
+end
+
+function saveFigureAlsoAsVector(fig, pngPath)
+% Also saves a vector PDF next to the PNG (same name, .pdf extension) so
+% the figure can be resized for a slide deck or printed on a poster
+% without losing sharpness -- a PNG is a fixed grid of pixels and gets
+% blurry/pixelated when scaled up, a PDF is redrawn at any size.
+pdfPath = regexprep(pngPath, '\.png$', '.pdf');
+try
+    exportgraphics(fig, pdfPath, 'ContentType', 'vector');
+catch
+    try
+        print(fig, pdfPath, '-dpdf', '-vector', '-bestfit');
+    catch
+    end
+end
+end
+
+function addCategoryShades(ax, category, colors, alphaVal)
+% ADDCATEGORYSHADES  Draws vertical background patches for each category
+% spanning its exact stimulus range [min(bars), max(bars)].
+if nargin < 4 || isempty(alphaVal), alphaVal = 0.15; end
+nCat = numel(category);
+if nargin < 3 || isempty(colors)
+    colors = defaultCategoryColors(nCat);
+end
+
+yLim = get(ax, 'YLim');
+
+% First pass: collect each category's OWN observed bar range (may leave
+% gaps between categories where no bar length was actually shown).
+xMinRaw = nan(1, nCat);  xMaxRaw = nan(1, nCat);
+for c = 1:nCat
+    cc = category(c);
+    if isfield(cc, 'stimMin') && ~isnan(cc.stimMin) && isfield(cc, 'stimMax') && ~isnan(cc.stimMax)
+        xMinRaw(c) = cc.stimMin;
+        xMaxRaw(c) = cc.stimMax;
+    elseif isfield(cc, 'xLevelTrueRank') && isfield(cc, 'xLevels')
+        catBars = cc.xLevels(cc.xLevelTrueRank == c);
+        if isempty(catBars), continue; end
+        xMinRaw(c) = min(catBars);
+        xMaxRaw(c) = max(catBars);
+    end
+end
+
+% Second pass: extend each category's shaded patch halfway to its
+% neighbors (categories are already in ascending-length rank order, c=1
+% is the shortest), so adjacent patches meet at the EQUIDISTANT midpoint
+% between their observed ranges instead of stopping short and leaving a
+% white gap where no bar length happens to have been shown.
+for c = 1:nCat
+    if isnan(xMinRaw(c)), continue; end
+    if c > 1 && ~isnan(xMaxRaw(c - 1))
+        xLo = (xMaxRaw(c - 1) + xMinRaw(c)) / 2;
+    else
+        xLo = xMinRaw(c);
+    end
+    if c < nCat && ~isnan(xMinRaw(c + 1))
+        xHi = (xMaxRaw(c) + xMinRaw(c + 1)) / 2;
+    else
+        xHi = xMaxRaw(c);
+    end
+    xP = [xLo, xHi, xHi, xLo];
+    yP = [yLim(1), yLim(1), yLim(2), yLim(2)];
+    h = patch('Parent', ax, 'XData', xP, 'YData', yP, ...
+        'FaceColor', colors(c, :), 'EdgeColor', 'none', ...
+        'FaceAlpha', alphaVal, 'HitTest', 'off', 'HandleVisibility', 'off');
+    uistack(h, 'bottom');
+end
+set(ax, 'YLim', yLim);
+set(ax, 'Layer', 'top');
 end

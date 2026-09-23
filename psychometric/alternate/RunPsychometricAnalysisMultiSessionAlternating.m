@@ -37,7 +37,7 @@
 % QUICK-EDIT -- ADJUST THESE PATHS for your computer before running
 % ===========================================================================
 startDir  = 'C:\path\to\your\Proyecto\Resultados_Alternating';
-outDir    = 'C:\path\to\your\Proyecto\Resultados_Alternating\PsychometricAnalysis\MultiSession';
+outDir    = 'C:\Users\LabB15\Documents\Erick\Erick\Proyecto\Resultados_AltCATEG\Análisis\Resultados';
 % Only needed if your trial_data_*.csv files were pulled out of their
 % original outputs/ session folders (so trajectory_movement_*.csv is no
 % longer sitting next to each one) -- point this at the task's outputs
@@ -45,7 +45,7 @@ outDir    = 'C:\path\to\your\Proyecto\Resultados_Alternating\PsychometricAnalysi
 % find them; the chronometric curve is target-onset -> movement takeoff
 % and needs that file. Leave as '' if trial_data_*.csv already lives next
 % to its trajectory_movement_*.csv (the normal, un-consolidated layout).
-trajectoryDir = 'C:\Users\LabB15\Documents\Erick\CategTask_GitHub\Categorization-of-Lengths-in-the-Rhesus-Monkey-Macaca-Mulatta-with-a-Three-Category-System\outputs\alternate';;
+trajectoryDir = 'C:\Users\LabB15\Documents\Erick\CategTask_GitHub\Categorization-of-Lengths-in-the-Rhesus-Monkey-Macaca-Mulatta-with-a-Three-Category-System\outputs\alternate';
 
 % ===========================================================================
 % Always add this script's own folder (src/alternate) AND its sibling

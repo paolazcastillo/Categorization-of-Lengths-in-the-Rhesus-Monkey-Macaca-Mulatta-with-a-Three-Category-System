@@ -1358,7 +1358,7 @@ for c = 1:nCat
         title({ttlLine1, ttlLine2}, 'Interpreter', 'none');
     end
     xlabel(sprintf('Bar length (%s)', unit));
-    ylabel(sprintf('P(response = %s)', cc.name));
+    ylabel(sprintf('P(respuesta = %s)', categoryNameEs(cc.name)));
     ylim([-0.02 1.02]);
     grid on; box on;
     legend(legendH, legendLabels, 'Location', 'best');
@@ -1488,6 +1488,22 @@ end
 
 function xr = xlim_safe2(x)
 xr = [min(x), max(x)];
+end
+
+function nameEs = categoryNameEs(nameEn)
+% Spanish label for the Y axis of a per-category psychometric curve
+% (e.g. "ShortGroup" -> "corto"). Falls back to the original name for
+% any group not in this table, so an unexpected category still plots.
+switch nameEn
+    case 'ShortGroup'
+        nameEs = 'corto';
+    case 'MidGroup'
+        nameEs = 'medio';
+    case 'LongGroup'
+        nameEs = 'largo';
+    otherwise
+        nameEs = nameEn;
+end
 end
 
 function [ciCorrect, ciError] = chronometricSessionClusterBootstrap(xLevels, xAll, timeAll, isCorrectAll, ...

@@ -61,15 +61,6 @@ function results = AnalyzePsychometricCurves(csvPath, varargin)
 %     'FitOrdinalModel'     (default true)     -- see STEP 4 below
 %     'OutDir'              (default: <csv folder>/psychometric_analysis)
 %     'Verbose'             (default true)
-%     'ChronometricTimeSource' (default 'TargetReached') -- 'TargetReached' |
-%                            'Takeoff'; forwarded to LoadSessionTrialData.m.
-%                            This script itself does not build a chronometric
-%                            curve (that is AnalyzePsychometricCurvesMultiSession.m's
-%                            job), but accepts and forwards this option so a
-%                            caller pooling sessions (or falling back to a
-%                            single unpooled one, as
-%                            AnalyzePsychometricCurvesAlternating.m does) can
-%                            pass ONE consistent option to both.
 
 %   USAGE
 %     results = AnalyzePsychometricCurves('trial_data_sessROM_31Jul2026_1605.csv');
@@ -93,8 +84,7 @@ addParameter(p, 'FigureVisible', true, @(x) islogical(x) || isnumeric(x));
 addParameter(p, 'FitOrdinalModel', true, @(x) islogical(x) || isnumeric(x));
 addParameter(p, 'OutDir', '', @(s) ischar(s) || (isstring(s) && isscalar(s)));
 addParameter(p, 'Verbose', true, @(x) islogical(x) || isnumeric(x));
-addParameter(p, 'ChronometricTimeSource', 'TargetReached', ...
-    @(s) any(strcmpi(s, {'TargetReached', 'Takeoff'})));
+addParameter(p, 'ChronometricTimeSource', 'TargetReached', @(s) ischar(s) || iscell(s) || isstring(s));
 parse(p, csvPath, varargin{:});
 opt = p.Results;
 csvPath = char(opt.csvPath);
@@ -306,6 +296,13 @@ for c = 1:nCat
     cc.xLevels = xLevels;  cc.k = k;  cc.n = n;  cc.propObs = k ./ n;
     cc.propWilsonLo = wLo;  cc.propWilsonHi = wHi;
     cc.xLevelTrueRank = xLevelTrueRank;
+    catBars = xLevels(xLevelTrueRank == c);
+    if isempty(catBars)
+        catBars = xLevels;
+    end
+    cc.stimLevels = catBars;
+    cc.stimMin = min(catBars);
+    cc.stimMax = max(catBars);
     cc.curveX = xGrid;  cc.curveY = Ppoint(:, c);
     cc.curveLo = jb.categoryLo{c};  cc.curveHi = jb.categoryHi{c};
     cc.nBootstrap = jb.nBoot;
@@ -505,6 +502,13 @@ results.meta.nRowsUsable = nRows;
 results.meta.nOmission = nOmission;
 results.meta.nExcludedRetry = nExcludedRetry;
 results.meta.nUnexpectedCode = nUnexpected;
+% Correct / incorrect trial counts derived from isCorrectFit (the useRow-
+% selected subset).  "Raw" equivalents count over all nRows usable rows
+% BEFORE any exclusion mask (omissions, retries, unexpected codes).
+results.meta.nCorrect        = nnz(S.isCorrectFit == 1);
+results.meta.nError          = nnz(S.isCorrectFit == 0);
+results.meta.nCorrectRaw     = S.nCorrectRaw;
+results.meta.nErrorRaw       = S.nErrorRaw;
 results.boundary = boundaryFits;
 results.category = category;
 results.ordinalModel = ordinalModel;
@@ -1094,17 +1098,17 @@ function colors = defaultCategoryColors(nCat)
 % Matches this project's own default stimulus colours.
 %If you modify the colors in other parts of the scripts for the curves be sure to
 %also modify them here to keep the colors consistent across all figures.
-orange = [1.00 0.647 0.00];
-green  = [0.00 0.70 0.00];   % slightly darkened from pure [0 1 0] for legibility on white
-blue   = [0.00 0.00 1.00];
+orange = [1.00 0.55 0.00];
+green  = [0.10 0.75 0.20];
+blue   = [0.05 0.45 0.95];
 switch nCat
     case 2
         colors = [orange; blue];
     case 3
         colors = [orange; green; blue];
     otherwise
-        colors = lines(nCat);   % base MATLAB colormap, generic fallback
-end
+        colors = lines(nCat);
+end   % base MATLAB colormap, generic fallback
 end
 
 function makeCategoryPlots(category, outDir, csvBase, link, figVisible, nTrialsUsed, nSessions)
@@ -1113,169 +1117,155 @@ nCat = numel(category);
 colors = defaultCategoryColors(nCat);
 chanceLevel = 1 / nCat;
 if figVisible, visStr = 'on'; else, visStr = 'off'; end
-groupNamesAll = {category.name};
 theoColor = [0.0 0.45 0.7];   % teal-blue: used consistently for every THEORETICAL element
 obsPseColor = [0.85 0.1 0.1]; % red: used consistently for every OBSERVED PSE element
 obsMidColor = [0.5 0.2 0.6];  % purple: OBSERVED subjective width/center of an interior category
+% A single-category (one curve per figure) plot does not need to carry a
+% category color on its fitted curve line -- black reads better on its
+% own. The category color scheme is reserved for the combined ("global")
+% overview figure, where it is what distinguishes the curves from each
+% other (see makeCategoryPlots' overview section below).
+curveColorIndividual = [0 0 0];
 
 % --- One figure per category, with its bootstrap band and raw data ------
 for c = 1:nCat
     cc = category(c);
-    fig = figure('Visible', visStr, 'Position', [100 100 640 480]);
+    fig = figure('Visible', visStr, 'Position', [100 100 850 580]);
     hold on;
-    % Legend built from EXPLICIT handles from here on is needed because the number of "data" objects is no
-    % longer fixed (1 errorbar per true-category group present, up to
-    % nCat), and now also because PSE elements are conditional on which
-    % OBSERVED/THEORETICAL markers actually apply to this category.
     legendH = [];  legendLabels = {};
     if ~isempty(cc.curveLo) && ~all(isnan(cc.curveLo))
         xFill = [cc.curveX; flipud(cc.curveX)];
         yFill = [cc.curveLo; flipud(cc.curveHi)];
-        hFill = fill(xFill, yFill, colors(c, :), 'EdgeColor', 'none', 'FaceAlpha', 0.25);
-        legendH = [legendH, hFill];  legendLabels{end+1} = '95% bootstrap CI';
+        fill(xFill, yFill, [0.5 0.5 0.5], 'EdgeColor', 'none', 'FaceAlpha', 0.25);
     end
-    hCurve = plot(cc.curveX, cc.curveY, '-', 'Color', colors(c, :) * 0.75, 'LineWidth', 2);
-    legendH = [legendH, hCurve];  legendLabels{end+1} = 'Fitted curve (derived)';
+    plot(cc.curveX, cc.curveY, '-', 'Color', curveColorIndividual, 'LineWidth', 2.8);
     errLo = cc.propObs - cc.propWilsonLo;
     errHi = cc.propWilsonHi - cc.propObs;
-    % Points and whiskers colored by the TRUE category of each bar length
-    % (cc.xLevelTrueRank), NOT by the category being plotted
     for g = 1:nCat
         idxG = (cc.xLevelTrueRank == g);
         if ~any(idxG), continue; end
         hEBg = errorbar(cc.xLevels(idxG), cc.propObs(idxG), errLo(idxG), errHi(idxG), 'o');
         set(hEBg, 'Color', colors(g, :) * 0.6, 'MarkerFaceColor', colors(g, :), ...
-            'MarkerEdgeColor', colors(g, :) * 0.6, 'MarkerSize', 6, 'LineWidth', 1.2);
-        legendH = [legendH, hEBg]; %#ok<AGROW>
-        legendLabels{end+1} = sprintf('Data: %s (n=%d)', category(g).name, sum(cc.n(idxG))); %#ok<AGROW>
+            'MarkerEdgeColor', colors(g, :) * 0.6, 'MarkerSize', 8, 'LineWidth', 1.8);
     end
-    % Chance-level reference (1/nCat), drawn on every panel for comparison:
-    hChance = plot(xlim_safe2(cc.curveX), [chanceLevel chanceLevel], '--', ...
-        'Color', [0.6 0.6 0.6], 'LineWidth', 1);
-    legendH = [legendH, hChance];  legendLabels{end+1} = sprintf('Chance (1/%d = %.3f)', nCat, chanceLevel);
+    plot(xlim_safe2(cc.curveX), [chanceLevel chanceLevel], '--', ...
+        'Color', [0.6 0.6 0.6], 'LineWidth', 1.5);
     if strcmp(cc.summaryType, 'threshold')
-        
-        hPseV = plot([cc.threshold cc.threshold], [0 0.5], ':', 'Color', obsPseColor, 'LineWidth', 1.3);
-        plot(xlim_safe2(cc.curveX), [0.5 0.5], ':', 'Color', obsPseColor, 'LineWidth', 1.3);
-        plot(cc.threshold, 0.5, 'p', 'MarkerSize', 10, 'MarkerFaceColor', obsPseColor, 'MarkerEdgeColor', 'k');
-        % Text annotation for observed PSE
-        text(cc.threshold, 0.5 + 0.04, sprintf('PSE_{obs}\n%.3f', cc.threshold), ...
-            'HorizontalAlignment', 'center', 'FontSize', 14, 'Color', obsPseColor, ...
-            'FontWeight', 'bold', 'Interpreter', 'tex');
+        hPseV = plot([cc.threshold cc.threshold], [0 0.5], ':', 'Color', obsPseColor, 'LineWidth', 1.8);
+        plot([min(cc.curveX) cc.threshold], [0.5 0.5], ':', 'Color', obsPseColor, 'LineWidth', 1.8);
+        plot(cc.threshold, 0.5, 'p', 'MarkerSize', 11, 'MarkerFaceColor', obsPseColor, 'MarkerEdgeColor', 'k');
         legendH = [legendH, hPseV]; %#ok<AGROW>
-        legendLabels{end+1} = sprintf('Observed PSE = %.3f [%.3f, %.3f]', ...
-            cc.threshold, cc.thresholdCI(1), cc.thresholdCI(2));
+        legendLabels{end+1} = sprintf('PSE observado = %.3f', cc.threshold);
         if ~isnan(cc.theoreticalThreshold)
             hPseTheo = plot([cc.theoreticalThreshold cc.theoreticalThreshold], [0 0.5], '--', ...
-                'Color', theoColor, 'LineWidth', 1.3);
-            plot(cc.theoreticalThreshold, 0.5, 'd', 'MarkerSize', 9, 'MarkerFaceColor', theoColor, 'MarkerEdgeColor', 'k');
-            % Text annotation for theoretical PSE (offset slightly below to avoid overlap)
-            text(cc.theoreticalThreshold, 0.5 - 0.09, sprintf('PSE_{theo}\n%.3f', cc.theoreticalThreshold), ...
-                'HorizontalAlignment', 'center', 'FontSize', 14, 'Color', theoColor, ...
-                'FontWeight', 'bold', 'Interpreter', 'tex');
+                'Color', theoColor, 'LineWidth', 1.8);
+            plot(cc.theoreticalThreshold, 0.5, 'd', 'MarkerSize', 10, 'MarkerFaceColor', theoColor, 'MarkerEdgeColor', 'k');
             legendH = [legendH, hPseTheo]; %#ok<AGROW>
-            legendLabels{end+1} = sprintf('Theoretical PSE = %.3f  (bias = %.3f)', ...
-                cc.theoreticalThreshold, cc.thresholdBias);
+            legendLabels{end+1} = sprintf('PSE teórico = %.3f', cc.theoreticalThreshold);
         end
     else
-        plot([cc.peakX cc.peakX], [0 cc.peakY], ':', 'Color', [0.3 0.3 0.3]);
-
+        plot([cc.peakX cc.peakX], [0 cc.peakY], ':', 'Color', [0.3 0.3 0.3], 'LineWidth', 1.5);
         if ~isnan(cc.pseLowerTheoretical) && ~isnan(cc.pseUpperTheoretical)
             hWidthTheo = plot([cc.pseLowerTheoretical cc.pseLowerTheoretical cc.pseUpperTheoretical cc.pseUpperTheoretical], ...
-                [0 1 1 0], '--', 'Color', theoColor, 'LineWidth', 1.1);
+                [0 1 1 0], '--', 'Color', theoColor, 'LineWidth', 1.8);
             hWidthTheo = hWidthTheo(1);
-            plot(cc.centerTheoretical, 0.06, 'v', 'MarkerSize', 8, 'MarkerFaceColor', theoColor, 'MarkerEdgeColor', 'k');
+            plot(cc.centerTheoretical, 0.06, 'v', 'MarkerSize', 10, 'MarkerFaceColor', theoColor, 'MarkerEdgeColor', 'k');
             legendH = [legendH, hWidthTheo]; %#ok<AGROW>
-            legendLabels{end+1} = sprintf('Theoretical design boundaries [%.3f, %.3f], center=%.3f', ...
-                cc.pseLowerTheoretical, cc.pseUpperTheoretical, cc.centerTheoretical);
+            legendLabels{end+1} = sprintf('PSE teórico = %.3f', cc.centerTheoretical);
         end
     end
-    restLbl = strjoin(groupNamesAll([1:c-1, c+1:nCat]), '+');
-    ttl = sprintf('%s vs %s\nSessions: %d  |  Trials: %d', cc.name, restLbl, nSessions, nTrialsUsed);
-    xlabel('Bar length (deg VA)');
-    ylabel(sprintf('P(response = %s)', cc.name));
-    title(ttl, 'Interpreter', 'none');
+    ttl = sprintf('Sesiones: %d  |  Ensayos: %d', nSessions, nTrialsUsed);
+    xlabel('Longitud de la barra (grados AV)', 'FontSize', 18, 'FontWeight', 'bold');
+    ylabel(sprintf('P(respuesta = %s)', categoryNameEs(cc.name)), 'FontSize', 18, 'FontWeight', 'bold');
+    title(ttl, 'Interpreter', 'none', 'FontSize', 20, 'FontWeight', 'bold');
     ylim([-0.02 1.02]);
-    grid on; box on;
-    legend(legendH, legendLabels, 'Location', 'best');
+    set(gca, 'FontSize', 18, 'LineWidth', 1.2);
+    grid off; box on;
+    addCategoryShades(gca, category, colors, 0.12);
+    hLeg = legend(legendH, legendLabels, 'Location', 'north', 'FontSize', 18);
+    set(hLeg, 'Box', 'off', 'Color', 'none');
     outFile = fullfile(outDir, sprintf('%s_category_%s_%s.png', csvBase, cc.name, link));
     try
-        print(fig, outFile, '-dpng', '-r150');
+        print(fig, outFile, '-dpng', '-r300');
     catch
         saveas(fig, outFile);
     end
+    saveFigureAlsoAsVector(fig, outFile);
     if ~figVisible, close(fig); end
 end
 
 
 % ---COMBINED FIGURE WITH ALL GRAPHICS TOGETHER --------------
-% Every plotted element gets an EXPLICIT legend entry 
-fig = figure('Visible', visStr, 'Position', [100 100 720 520]);
+% Every plotted element gets an EXPLICIT legend entry
+% Only the 3-category "global" overview (all 3 one-vs-rest curves
+% together) keeps the category color scheme -- it is what distinguishes
+% the 3 curves from each other there. Any other curve count (e.g. the
+% 2-category case) uses a neutral grayscale ramp instead.
+if nCat == 3
+    curveColorsOverview = colors;
+else
+    curveColorsOverview = repmat(linspace(0, 0.55, nCat)', 1, 3);
+end
+fig = figure('Visible', visStr, 'Position', [100 100 880 600]);
 hold on;
 legendH = [];  legendLabels = {};
 for c = 1:nCat
     cc = category(c);
-    hCurve = plot(cc.curveX, cc.curveY, '-', 'Color', colors(c, :) * 0.75, 'LineWidth', 2.2);
+    plot(cc.curveX, cc.curveY, '-', 'Color', curveColorsOverview(c, :) * 0.75, 'LineWidth', 3.0);
     errLo = cc.propObs - cc.propWilsonLo;
     errHi = cc.propWilsonHi - cc.propObs;
     hEB = errorbar(cc.xLevels, cc.propObs, errLo, errHi, 'o');
-    set(hEB, 'Color', colors(c, :) * 0.75, 'MarkerFaceColor', colors(c, :), ...
-        'MarkerSize', 5, 'LineWidth', 1);
-    legendH = [legendH, hCurve];  legendLabels{end+1} = cc.name; %#ok<AGROW>
+    set(hEB, 'Color', curveColorsOverview(c, :) * 0.75, 'MarkerFaceColor', curveColorsOverview(c, :), ...
+        'MarkerSize', 8, 'LineWidth', 1.8);
     % PSE markers (only meaningful for the 2 edge/monotonic categories --
     % see this function's header for why the interior category does not get one):
     if strcmp(cc.summaryType, 'threshold')
-        plot([cc.threshold cc.threshold], [0 0.5], ':', 'Color', colors(c, :) * 0.6, 'LineWidth', 1.3);
-        plot(cc.threshold, 0.5, 'p', 'MarkerSize', 9, 'MarkerFaceColor', colors(c, :), 'MarkerEdgeColor', 'k');
-        % Text annotation: observed PSE
-        text(cc.threshold, 0.5 + 0.04, sprintf('PSE_{obs}\n%.3f', cc.threshold), ...
-            'HorizontalAlignment', 'center', 'FontSize', 14, 'Color', colors(c, :) * 0.6, ...
-            'FontWeight', 'bold', 'Interpreter', 'tex');
+        plot([cc.threshold cc.threshold], [0 0.5], ':', 'Color', curveColorsOverview(c, :) * 0.6, 'LineWidth', 1.8);
+        plot([min(cc.curveX) cc.threshold], [0.5 0.5], ':', 'Color', curveColorsOverview(c, :) * 0.6, 'LineWidth', 1.8);
+        hPseC = plot(cc.threshold, 0.5, 'p', 'MarkerSize', 11, 'MarkerFaceColor', curveColorsOverview(c, :), 'MarkerEdgeColor', 'k');
+        legendH = [legendH, hPseC]; %#ok<AGROW>
+        legendLabels{end+1} = sprintf('PSE observado %s = %.3f', cc.name, cc.threshold); %#ok<AGROW>
         if ~isnan(cc.theoreticalThreshold)
-            plot([cc.theoreticalThreshold cc.theoreticalThreshold], [0 0.5], '--', 'Color', theoColor, 'LineWidth', 1);
-            plot(cc.theoreticalThreshold, 0.5, 'd', 'MarkerSize', 8, 'MarkerFaceColor', theoColor, 'MarkerEdgeColor', 'k');
-            % Text annotation: theoretical PSE (offset below to avoid overlap)
-            text(cc.theoreticalThreshold, 0.5 - 0.09, sprintf('PSE_{theo}\n%.3f', cc.theoreticalThreshold), ...
-                'HorizontalAlignment', 'center', 'FontSize', 14, 'Color', theoColor, ...
-                'FontWeight', 'bold', 'Interpreter', 'tex');
+            plot([cc.theoreticalThreshold cc.theoreticalThreshold], [0 0.5], '--', 'Color', theoColor, 'LineWidth', 1.8);
+            hPseTheoC = plot(cc.theoreticalThreshold, 0.5, 'd', 'MarkerSize', 10, 'MarkerFaceColor', theoColor, 'MarkerEdgeColor', 'k');
+            legendH = [legendH, hPseTheoC]; %#ok<AGROW>
+            legendLabels{end+1} = sprintf('PSE teórico %s = %.3f', cc.name, cc.theoreticalThreshold); %#ok<AGROW>
         end
     end
 end
-hChanceRef = plot(xlim_safe2(category(1).curveX), [chanceLevel chanceLevel], '--', 'Color', [0.6 0.6 0.6], 'LineWidth', 1);
-legendH = [legendH, hChanceRef];  legendLabels{end+1} = sprintf('Chance (1/%d = %.3f)', nCat, chanceLevel);
-h50 = plot(xlim_safe2(category(1).curveX), [0.5 0.5], ':', 'Color', [0.5 0.5 0.5], 'LineWidth', 1);
-legendH = [legendH, h50];  legendLabels{end+1} = '50% (observed-PSE reference)';
-hPseProxy = plot(nan, nan, 'p', 'MarkerSize', 9, 'MarkerFaceColor', [0.5 0.5 0.5], 'MarkerEdgeColor', 'k');
-legendH = [legendH, hPseProxy];  legendLabels{end+1} = 'Observed PSE (star)';
-hPseTheoProxy = plot(nan, nan, 'd', 'MarkerSize', 8, 'MarkerFaceColor', theoColor, 'MarkerEdgeColor', 'k');
-legendH = [legendH, hPseTheoProxy];  legendLabels{end+1} = 'Theoretical PSE (diamond)';
 % Delimitation of the interior category(ies) by neighboring THEORETICAL
 % (design) PSE only -- teal-blue dashed vertical lines with downward triangle:
 for c = 1:nCat
     cc = category(c);
     if strcmp(cc.summaryType, 'peak')
         if ~isnan(cc.pseLowerTheoretical) && ~isnan(cc.pseUpperTheoretical)
-            plot([cc.pseLowerTheoretical cc.pseLowerTheoretical], [0 1], '--', 'Color', theoColor, 'LineWidth', 1);
-            plot([cc.pseUpperTheoretical cc.pseUpperTheoretical], [0 1], '--', 'Color', theoColor, 'LineWidth', 1);
-            hTriTheo = plot(cc.centerTheoretical, 0.06, 'v', 'MarkerSize', 8, 'MarkerFaceColor', theoColor, 'MarkerEdgeColor', 'k');
-            legendH = [legendH, hTriTheo]; %#ok<AGROW>
-            legendLabels{end+1} = sprintf('%s: theoretical design boundaries [%.3f, %.3f]', cc.name, cc.pseLowerTheoretical, cc.pseUpperTheoretical); %#ok<AGROW>
+            plot([cc.pseLowerTheoretical cc.pseLowerTheoretical], [0 1], '--', 'Color', theoColor, 'LineWidth', 1.8);
+            plot([cc.pseUpperTheoretical cc.pseUpperTheoretical], [0 1], '--', 'Color', theoColor, 'LineWidth', 1.8);
         end
     end
 end
-xlabel('Bar length (deg VA)');
-ylabel('P(response = category)');
-ttl = sprintf('%s\nSessions: %d  |  Trials: %d', strjoin(groupNamesAll, ' vs '), nSessions, nTrialsUsed);
-title(ttl, 'Interpreter', 'none');
+xlabel('Longitud de la barra (grados AV)', 'FontSize', 18, 'FontWeight', 'bold');
+ylabel('P(respuesta = categoría)', 'FontSize', 18, 'FontWeight', 'bold');
+ttl = sprintf('Sesiones: %d  |  Ensayos: %d', nSessions, nTrialsUsed);
+title(ttl, 'Interpreter', 'none', 'FontSize', 20, 'FontWeight', 'bold');
 ylim([-0.02 1.02]);
-grid on; box on;
-legend(legendH, legendLabels, 'Location', 'best');
+set(gca, 'FontSize', 18, 'LineWidth', 1.2);
+grid off; box on;
+addCategoryShades(gca, category, colors, 0.12);
+if nCat == 3
+    legLoc = 'east';
+else
+    legLoc = 'north';
+end
+hLeg = legend(legendH, legendLabels, 'Location', legLoc, 'FontSize', 18);
+set(hLeg, 'Box', 'off', 'Color', 'none');
 outFile = fullfile(outDir, sprintf('%s_categories_overview_%s.png', csvBase, link));
 try
-    print(fig, outFile, '-dpng', '-r150');
+    print(fig, outFile, '-dpng', '-r300');
 catch
     saveas(fig, outFile);
 end
+saveFigureAlsoAsVector(fig, outFile);
 if ~figVisible, close(fig); end
 end
 
@@ -1286,3 +1276,91 @@ function xr = xlim_safe2(x)
 % of plotting matters in some MATLAB/Octave versions).
 xr = [min(x), max(x)];
 end
+
+function nameEs = categoryNameEs(nameEn)
+% Spanish label for the Y axis of a per-category psychometric curve
+% (e.g. "ShortGroup" -> "corto"). Falls back to the original name for
+% any group not in this table, so an unexpected category still plots.
+switch nameEn
+    case 'ShortGroup'
+        nameEs = 'corto';
+    case 'MidGroup'
+        nameEs = 'medio';
+    case 'LongGroup'
+        nameEs = 'largo';
+    otherwise
+        nameEs = nameEn;
+end
+end
+
+function saveFigureAlsoAsVector(fig, pngPath)
+% Also saves a vector PDF next to the PNG (same name, .pdf extension) so
+% the figure can be resized for a slide deck or printed on a poster
+% without losing sharpness -- a PNG is a fixed grid of pixels and gets
+% blurry/pixelated when scaled up, a PDF is redrawn at any size.
+pdfPath = regexprep(pngPath, '\.png$', '.pdf');
+try
+    exportgraphics(fig, pdfPath, 'ContentType', 'vector');
+catch
+    try
+        print(fig, pdfPath, '-dpdf', '-vector', '-bestfit');
+    catch
+    end
+end
+end
+
+function addCategoryShades(ax, category, colors, alphaVal)
+% ADDCATEGORYSHADES  Draws vertical background patches for each category
+% spanning its exact stimulus range [min(bars), max(bars)].
+if nargin < 4 || isempty(alphaVal), alphaVal = 0.15; end
+nCat = numel(category);
+if nargin < 3 || isempty(colors)
+    colors = defaultCategoryColors(nCat);
+end
+
+yLim = get(ax, 'YLim');
+
+% First pass: collect each category's OWN observed bar range (may leave
+% gaps between categories where no bar length was actually shown).
+xMinRaw = nan(1, nCat);  xMaxRaw = nan(1, nCat);
+for c = 1:nCat
+    cc = category(c);
+    if isfield(cc, 'stimMin') && ~isnan(cc.stimMin) && isfield(cc, 'stimMax') && ~isnan(cc.stimMax)
+        xMinRaw(c) = cc.stimMin;
+        xMaxRaw(c) = cc.stimMax;
+    elseif isfield(cc, 'xLevelTrueRank') && isfield(cc, 'xLevels')
+        catBars = cc.xLevels(cc.xLevelTrueRank == c);
+        if isempty(catBars), continue; end
+        xMinRaw(c) = min(catBars);
+        xMaxRaw(c) = max(catBars);
+    end
+end
+
+% Second pass: extend each category's shaded patch halfway to its
+% neighbors (categories are already in ascending-length rank order, c=1
+% is the shortest), so adjacent patches meet at the EQUIDISTANT midpoint
+% between their observed ranges instead of stopping short and leaving a
+% white gap where no bar length happens to have been shown.
+for c = 1:nCat
+    if isnan(xMinRaw(c)), continue; end
+    if c > 1 && ~isnan(xMaxRaw(c - 1))
+        xLo = (xMaxRaw(c - 1) + xMinRaw(c)) / 2;
+    else
+        xLo = xMinRaw(c);
+    end
+    if c < nCat && ~isnan(xMinRaw(c + 1))
+        xHi = (xMaxRaw(c) + xMinRaw(c + 1)) / 2;
+    else
+        xHi = xMaxRaw(c);
+    end
+    xP = [xLo, xHi, xHi, xLo];
+    yP = [yLim(1), yLim(1), yLim(2), yLim(2)];
+    h = patch('Parent', ax, 'XData', xP, 'YData', yP, ...
+        'FaceColor', colors(c, :), 'EdgeColor', 'none', ...
+        'FaceAlpha', alphaVal, 'HitTest', 'off', 'HandleVisibility', 'off');
+    uistack(h, 'bottom');
+end
+set(ax, 'YLim', yLim);
+set(ax, 'Layer', 'top');
+end
+
