@@ -52,3 +52,12 @@ the console kept reading them, so CenterConsole failed to construct with
 "Reference to non-existent field 'alternateBlocks2cat'" and the window came up
 half-built. With 1/1 (the default) the schedule is the strict one-block
 alternation v8.23 hardcoded.
+
+Post-v10.00: trial_data_*.csv gains two more trailing columns, StimToRuleDelay_ms
+and BarToTargetDelay_ms -- the session's configured working-memory delays
+(orgParams.delayStimToRule / .barToTargetDelay, console "Delay: bar -> cue" /
+"Delay: cue -> targets"), converted to ms and repeated on every row. Both were
+already available once per session in params_*.mat but invisible to the
+psychometric-analysis side, which only reads trial_data_*.csv; files from
+before this change lack the two columns, so readers must treat them as
+optional. Default 0 means that delay/state was inactive.

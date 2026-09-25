@@ -75,6 +75,19 @@ function CenterOutTask(orgParams)
 %   the layout that was actually on screen for that row. Appended after
 %   SessionMode so every earlier column keeps its position.
 %
+%   WORKING-MEMORY DELAYS (StimToRuleDelay_ms/BarToTargetDelay_ms,
+%   trial_data_*.csv, added after v10.00). This SESSION's configured
+%   orgParams.delayStimToRule / .barToTargetDelay (console "Delay: bar ->
+%   cue" / "Delay: cue -> targets"; see EP.STIM_DELAY/EP.CUE_DELAY in
+%   TaskEpoch.m), converted seconds -> ms and repeated on every row like
+%   SessionMode. Both default to 0 (delay/state inactive). Previously only
+%   recorded once per session in params_*.mat (CenterConsole.m's pre-run
+%   snapshot), invisible to the psychometric-analysis side, which reads
+%   only trial_data_*.csv; logging them per row lets a pooled analysis
+%   across sessions with different settings tell them apart without
+%   opening each session's params_*.mat. Trailing columns, appended after
+%   CatAtDown_270, so every earlier column keeps its position.
+%
 %   INPUT  orgParams : struct of GUI handles and run parameters (from
 %          CenterConsole.m's runTask, or built by hand by a
 %          caller like OffrigPlay.m).
@@ -770,10 +783,18 @@ fid_log = fopen(trialLogFile, 'w');
 % CatAtRight_0..CatAtDown_270 = category drawn at each cardinal position
 % this attempt, 0 = no target there; see the TARGET LAYOUT note in the file
 % header. Trailing columns, so readers indexing by position are unaffected.
+% StimToRuleDelay_ms/BarToTargetDelay_ms = this SESSION's configured
+% working-memory delays (orgParams.delayStimToRule / .barToTargetDelay,
+% console "Delay: bar -> cue" / "Delay: cue -> targets"), converted from
+% seconds to ms and repeated on every row -- session-wide constants, not
+% per-trial, but logged per row (like SessionMode) so a pooled analysis
+% across sessions with different settings can tell them apart without
+% opening each session's params_*.mat. 0 = that delay/state was inactive.
 fprintf(fid_log, ['Date,Block,TrialNumInBlock,StimulusGroup,BarSizeVA_deg,DecisionTime_s,' ...
                 'ExecutionTime_s,TotalTime_s,TakeoffTime_s,IsCorrect,ErrorType,DirectionChosen,DirectionCorrect,' ...
                 'PlannedDirection,ChosenTarget,PrevTrialCorrect,PrevTrialDirection,Attempt,' ...
-                'NumCategories,SessionMode,CatAtRight_0,CatAtUp_90,CatAtLeft_180,CatAtDown_270\n']);
+                'NumCategories,SessionMode,CatAtRight_0,CatAtUp_90,CatAtLeft_180,CatAtDown_270,' ...
+                'StimToRuleDelay_ms,BarToTargetDelay_ms\n']);
 fclose(fid_log);
 fprintf('Trial log file created:      %s\n', trialLogFile);
 
@@ -2540,12 +2561,13 @@ while exitFlag == 0
                         trialColorRows(trial_sequence_index, slotK);
                 end
                 fid_log = fopen(trialLogFile, 'a');
-                fprintf(fid_log, '%s,%d,%d,%s,%.2f,%.4f,%.4f,%.4f,%.4f,%d,%d,%s,%s,%s,%d,%d,%s,%d,%d,%s,%d,%d,%d,%d\n', ...
+                fprintf(fid_log, '%s,%d,%d,%s,%.2f,%.4f,%.4f,%.4f,%.4f,%d,%d,%s,%s,%s,%d,%d,%s,%d,%d,%s,%d,%d,%d,%d,%.1f,%.1f\n', ...
                     sessionDate, blockNum, trialNumInBlock, colorNames_log{current_trial_color}, ...
                     barVA_log, decisionTime, executionTime, totalTime, takeoffTime, good_trial, error_type, ...
                     dirChosenStr, directionNames_log{current_trial_direction}, plannedDirForLog, chosen_target_color, ...
                     prevTrialCorrect, prevTrialDirection, stimAttempt, blkNc, sessionMode, ...
-                    catAtDir(1), catAtDir(2), catAtDir(3), catAtDir(4));
+                    catAtDir(1), catAtDir(2), catAtDir(3), catAtDir(4), ...
+                    delayStimToRule * 1000, barToTargetDelay * 1000);
                 fclose(fid_log);
                 prevTrialCorrect   = good_trial;
                 prevTrialDirection = dirChosenStr;
